@@ -676,10 +676,7 @@ pub async fn enhance() -> (Mapping, HashSet<String>, HashMap<String, ResultLog>)
             // insert to the front
             for app_path in apps.iter().rev() {
                 // Rule fallback (regex is safer for package structure)
-                rules.insert(
-                    0,
-                    Value::String(format!("PROCESS-PATH-REGEX,^{}/.*,DIRECT", app_path)),
-                );
+                rules.insert(0, Value::String(format!("PROCESS-PATH-REGEX,^{}/.*,DIRECT", app_path)));
 
                 // Extract app name for tun.auto-exclude-processes
                 if let Some(app_name) = std::path::Path::new(app_path.as_str())
@@ -711,10 +708,7 @@ pub async fn enhance() -> (Mapping, HashSet<String>, HashMap<String, ResultLog>)
                     }
                 }
 
-                tun.insert(
-                    "auto-exclude-processes".into(),
-                    Value::Sequence(auto_exclude),
-                );
+                tun.insert("auto-exclude-processes".into(), Value::Sequence(auto_exclude));
                 config.insert("tun".into(), Value::Mapping(tun));
             }
         }
