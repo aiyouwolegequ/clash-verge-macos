@@ -41,6 +41,7 @@ interface SwitchRowProps {
 
 /**
  * 抽取的子组件：统一的开关 UI
+ * active = 真实状态OS/配置 乐观更新
  */
 const SwitchRow = ({
   label,
