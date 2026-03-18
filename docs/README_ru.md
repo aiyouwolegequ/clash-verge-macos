@@ -27,17 +27,17 @@ Clash Meta GUI базируется на <a href="https://github.com/tauri-apps/
 
 ## Установка
 
-Пожалуйста, перейдите на страницу релизов, чтобы скачать соответствующий установочный пакет: [Страница релизов](https://github.com/clash-verge-rev/clash-verge-rev/releases)<br>
-Перейти на [Страницу релизов](https://github.com/clash-verge-rev/clash-verge-rev/releases) to download the corresponding installation package<br>
+Пожалуйста, перейдите на страницу релизов, чтобы скачать соответствующий установочный пакет: [Страница релизов](https://github.com/aiyouwolegequ/clash-verge-macos/releases)<br>
+Перейти на [Страницу релизов](https://github.com/aiyouwolegequ/clash-verge-macos/releases) to download the corresponding installation package<br>
 Поддержка Windows (x64/x86), Linux (x64/arm64) и macOS 10.15+ (intel/apple).
 
 #### Как выбрать дистрибутив?
 
 | Версия                | Характеристики                                                                                          | Ссылка                                                                                 |
 | :-------------------- | :------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------- |
-| Stable                | Официальный релиз, высокая надежность, подходит для повседневного использования.                        | [Release](https://github.com/clash-verge-rev/clash-verge-rev/releases)                 |
-| Alpha(неиспользуемый) | Тестирование процесса публикации.                                                                       | [Alpha](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/alpha)         |
-| AutoBuild             | Версия с постоянным обновлением, подходящая для тестирования и обратной связи. Может содержать дефекты. | [AutoBuild](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/autobuild) |
+| Stable                | Официальный релиз, высокая надежность, подходит для повседневного использования.                        | [Release](https://github.com/aiyouwolegequ/clash-verge-macos/releases)                 |
+| Alpha(неиспользуемый) | Тестирование процесса публикации.                                                                       | [Alpha](https://github.com/aiyouwolegequ/clash-verge-macos/releases/tag/alpha)         |
+| AutoBuild             | Версия с постоянным обновлением, подходящая для тестирования и обратной связи. Может содержать дефекты. | [AutoBuild](https://github.com/aiyouwolegequ/clash-verge-macos/releases/tag/autobuild) |
 
 #### Инструкции по установке и ответы на часто задаваемые вопросы можно найти на [странице документации](https://clash-verge-rev.github.io/)
 

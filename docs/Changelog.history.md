@@ -1272,14 +1272,14 @@
 
 ### Features
 
-- 鼠标悬浮显示当前订阅的名称 [#938](https://github.com/clash-verge-rev/clash-verge-rev/pull/938)
-- 日志过滤支持正则表达式 [#959](https://github.com/clash-verge-rev/clash-verge-rev/pull/959)
+- 鼠标悬浮显示当前订阅的名称 [#938](https://github.com/aiyouwolegequ/clash-verge-macos/pull/938)
+- 日志过滤支持正则表达式 [#959](https://github.com/aiyouwolegequ/clash-verge-macos/pull/959)
 - 更新 Clash 内核到 1.18.4
 
 ### Bugs Fixes
 
 - 修复 Linux KDE 环境下系统代理无法开启的问题
-- 窗口最大化图标调整 [#924](https://github.com/clash-verge-rev/clash-verge-rev/pull/924)
+- 窗口最大化图标调整 [#924](https://github.com/aiyouwolegequ/clash-verge-macos/pull/924)
 - 修改 MacOS 托盘点击行为(左键菜单，右键点击事件)
 - 修复 MacOS 服务模式安装失败的问题
 
@@ -1290,28 +1290,28 @@
 ### Features
 
 - Meta(mihomo)内核回退 1.18.1（当前新版内核 hy2 协议有 bug，等修复后更新）
-- 多处界面细节调整 [#724](https://github.com/clash-verge-rev/clash-verge-rev/pull/724) [#799](https://github.com/clash-verge-rev/clash-verge-rev/pull/799) [#900](https://github.com/clash-verge-rev/clash-verge-rev/pull/900) [#901](https://github.com/clash-verge-rev/clash-verge-rev/pull/901)
+- 多处界面细节调整 [#724](https://github.com/aiyouwolegequ/clash-verge-macos/pull/724) [#799](https://github.com/aiyouwolegequ/clash-verge-macos/pull/799) [#900](https://github.com/aiyouwolegequ/clash-verge-macos/pull/900) [#901](https://github.com/aiyouwolegequ/clash-verge-macos/pull/901)
 - Linux 下新增服务模式
 - 新增订阅卡片右键可以打开机场首页
-- url-test 支持手动选择、节点组 fixed 节点使用角标展示 [#840](https://github.com/clash-verge-rev/clash-verge-rev/pull/840)
-- Clash 配置、Merge 配置提供 JSON Schema 语法支持、连接界面调整 [#887](https://github.com/clash-verge-rev/clash-verge-rev/pull/887)
-- 修改 Merge 配置文件默认内容 [#889](https://github.com/clash-verge-rev/clash-verge-rev/pull/889)
+- url-test 支持手动选择、节点组 fixed 节点使用角标展示 [#840](https://github.com/aiyouwolegequ/clash-verge-macos/pull/840)
+- Clash 配置、Merge 配置提供 JSON Schema 语法支持、连接界面调整 [#887](https://github.com/aiyouwolegequ/clash-verge-macos/pull/887)
+- 修改 Merge 配置文件默认内容 [#889](https://github.com/aiyouwolegequ/clash-verge-macos/pull/889)
 - 修改 tun 模式默认 mtu 为 1500，老版本升级，需在 tun 模式设置下“重置为默认值”。
-- 使用 npm 安装 meta-json-schema [#895](https://github.com/clash-verge-rev/clash-verge-rev/pull/895)
-- 更新部分翻译 [#904](https://github.com/clash-verge-rev/clash-verge-rev/pull/904)
+- 使用 npm 安装 meta-json-schema [#895](https://github.com/aiyouwolegequ/clash-verge-macos/pull/895)
+- 更新部分翻译 [#904](https://github.com/aiyouwolegequ/clash-verge-macos/pull/904)
 - 支持 ico 格式的任务栏图标
 
 ### Bugs Fixes
 
 - 修复 Linux KDE 环境下系统代理无法开启的问题
 - 修复延迟检测动画问题
-- 窗口最大化图标调整 [#816](https://github.com/clash-verge-rev/clash-verge-rev/pull/816)
-- 修复 Windows 某些情况下无法安装服务模式 [#822](https://github.com/clash-verge-rev/clash-verge-rev/pull/822)
-- UI 细节修复 [#821](https://github.com/clash-verge-rev/clash-verge-rev/pull/821)
+- 窗口最大化图标调整 [#816](https://github.com/aiyouwolegequ/clash-verge-macos/pull/816)
+- 修复 Windows 某些情况下无法安装服务模式 [#822](https://github.com/aiyouwolegequ/clash-verge-macos/pull/822)
+- UI 细节修复 [#821](https://github.com/aiyouwolegequ/clash-verge-macos/pull/821)
 - 修复使用默认编辑器打开配置文件
-- 修复内核文件在特定目录也可以更新的问题 [#857](https://github.com/clash-verge-rev/clash-verge-rev/pull/857)
+- 修复内核文件在特定目录也可以更新的问题 [#857](https://github.com/aiyouwolegequ/clash-verge-macos/pull/857)
 - 修复服务模式的安装目录问题
-- 修复删除配置文件的“更新间隔”出现的问题 [#907](https://github.com/clash-verge-rev/clash-verge-rev/issues/907)
+- 修复删除配置文件的“更新间隔”出现的问题 [#907](https://github.com/aiyouwolegequ/clash-verge-macos/issues/907)
 
 ### 已知问题（历史遗留问题，暂未找到有效解决方案）
 
@@ -1493,7 +1493,7 @@
 
 - 优化了系统代理开启的代码，解决了稀有场景下代理开启卡顿的问题
 - 添加 MacOS 下的 debug 日志，以便日后调试稀有场景下 MacOS 下无法开启系统代理的问题
-- MacOS 关闭 GUI 时同步杀除后台 GUI [#306](https://github.com/clash-verge-rev/clash-verge-rev/issues/306)
+- MacOS 关闭 GUI 时同步杀除后台 GUI [#306](https://github.com/aiyouwolegequ/clash-verge-macos/issues/306)
 
 ### Bugs Fixes
 
