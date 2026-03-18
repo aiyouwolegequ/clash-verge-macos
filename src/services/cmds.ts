@@ -594,3 +594,9 @@ export async function clearAppTrafficStats() {
     showNotice.error(err);
   });
 }
+
+export async function refreshMacExcludeApps() {
+  return invoke<void>("refresh_mac_exclude_apps").catch((err) => {
+    showNotice.error(err);
+  });
+}

@@ -258,6 +258,10 @@ pub struct IVerge {
     /// MacOS 选中的需要跳过代理的 App 路径
     #[cfg(target_os = "macos")]
     pub mac_exclude_apps: Option<Vec<String>>,
+
+    /// MacOS 跳过代理的 App 的所有可执行文件名称（自动更新）
+    #[cfg(target_os = "macos")]
+    pub mac_exclude_app_executables: Option<Vec<String>>,
 }
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]

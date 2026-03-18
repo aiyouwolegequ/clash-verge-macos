@@ -191,13 +191,24 @@ async fn collect_profile_items() -> ProfileItems {
     let name = current_item.name.clone().unwrap_or_default();
 
     let merge_item = resolve_chain_item(&profiles_arc, merge_uid, "", ChainType::Merge(Mapping::new())).await;
-    let script_item = resolve_chain_item(&profiles_arc, script_uid, "", ChainType::Script(tmpl::ITEM_SCRIPT.into())).await;
+    let script_item = resolve_chain_item(
+        &profiles_arc,
+        script_uid,
+        "",
+        ChainType::Script(tmpl::ITEM_SCRIPT.into()),
+    )
+    .await;
     let rules_item = resolve_chain_item(&profiles_arc, rules_uid, "", ChainType::Rules(SeqMap::default())).await;
     let proxies_item = resolve_chain_item(&profiles_arc, proxies_uid, "", ChainType::Proxies(SeqMap::default())).await;
     let groups_item = resolve_chain_item(&profiles_arc, groups_uid, "", ChainType::Groups(SeqMap::default())).await;
     let global_merge = resolve_chain_item(&profiles_arc, "Merge", "Merge", ChainType::Merge(Mapping::new())).await;
-    let global_script =
-        resolve_chain_item(&profiles_arc, "Script", "Script", ChainType::Script(tmpl::ITEM_SCRIPT.into())).await;
+    let global_script = resolve_chain_item(
+        &profiles_arc,
+        "Script",
+        "Script",
+        ChainType::Script(tmpl::ITEM_SCRIPT.into()),
+    )
+    .await;
 
     drop(profiles_arc);
 
@@ -582,23 +593,25 @@ pub async fn enhance() -> (Mapping, HashSet<String>, HashMap<String, ResultLog>)
                 .cloned()
                 .unwrap_or_default();
 
-            let mut exclude_processes = Vec::new();
-
             // insert to the front
             for app_path in apps.iter().rev() {
                 // Rule fallback (regex is safer for package structure)
                 rules.insert(0, Value::String(format!("PROCESS-PATH-REGEX,^{}/.*,DIRECT", app_path)));
-
-                // Extract app name for tun.auto-exclude-processes
-                if let Some(app_name) = std::path::Path::new(app_path.as_str())
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                {
-                    exclude_processes.push(Value::String(app_name.to_string()));
-                }
             }
 
             config.insert("rules".into(), Value::Sequence(rules));
+
+            // Use pre-computed executable names from config for auto-exclude-processes
+            // This avoids expensive disk I/O on every config generation
+            let exclude_processes = Config::verge()
+                .await
+                .latest_arc()
+                .mac_exclude_app_executables
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| Value::String(s.to_string()))
+                .collect::<Vec<_>>();
 
             // Inject into tun.auto-exclude-processes to bypass TUN entirely
             if !exclude_processes.is_empty() {

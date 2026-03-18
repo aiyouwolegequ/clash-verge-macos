@@ -1,20 +1,23 @@
+import { Refresh as RefreshIcon } from "@mui/icons-material";
 import {
   Box,
   Checkbox,
   FormControlLabel,
+  IconButton,
   List,
   ListItem,
   ListItemButton,
   ListItemIcon,
   ListItemText,
   TextField,
+  Tooltip,
 } from "@mui/material";
 import { useState, useImperativeHandle, forwardRef } from "react";
 import { createPortal } from "react-dom";
 
 import { BaseDialog } from "@/components/base";
 import { useVerge } from "@/hooks/use-verge";
-import { getMacosApps } from "@/services/cmds";
+import { getMacosApps, refreshMacExcludeApps } from "@/services/cmds";
 
 export interface MacAppExcludeViewerRef {
   open: () => void;
@@ -25,6 +28,7 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
     const [apps, setApps] = useState<{ name: string; path: string }[]>([]);
+    const [refreshing, setRefreshing] = useState(false);
     const { verge, patchVerge, mutateVerge } = useVerge();
     const excludeApps = verge?.mac_exclude_apps || [];
 
@@ -79,6 +83,15 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
       mutateVerge({ ...verge, mac_exclude_apps: newExcludes } as any, false);
     };
 
+    const onRefresh = async () => {
+      setRefreshing(true);
+      try {
+        await refreshMacExcludeApps();
+      } finally {
+        setRefreshing(false);
+      }
+    };
+
     return createPortal(
       <BaseDialog
         open={open}
@@ -105,14 +118,35 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
             gap: 1,
           }}
         >
-          <TextField
-            size="small"
-            placeholder="搜索应用..."
-            variant="outlined"
-            fullWidth
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+            <TextField
+              size="small"
+              placeholder="搜索应用..."
+              variant="outlined"
+              fullWidth
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Tooltip title="刷新应用列表">
+              <IconButton
+                onClick={onRefresh}
+                disabled={refreshing}
+                size="small"
+              >
+                <RefreshIcon
+                  sx={{
+                    animation: refreshing
+                      ? "spin 1s linear infinite"
+                      : undefined,
+                    "@keyframes spin": {
+                      "0%": { transform: "rotate(0deg)" },
+                      "100%": { transform: "rotate(360deg)" },
+                    },
+                  }}
+                />
+              </IconButton>
+            </Tooltip>
+          </Box>
           <FormControlLabel
             control={
               <Checkbox

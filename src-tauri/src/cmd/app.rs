@@ -1,5 +1,6 @@
 use super::CmdResult;
 use crate::core::{autostart, handle};
+use crate::module::mac_exclude_apps::MacExcludeAppsManager;
 use crate::utils::resolve::ui::{self, UiReadyStage};
 use crate::{cmd::StringifyErr as _, feat, utils::dirs};
 use clash_verge_logging::{Type, logging};
@@ -190,4 +191,10 @@ pub async fn get_macos_apps() -> CmdResult<Vec<MacAppInfo>> {
     {
         Ok(vec![])
     }
+}
+
+/// Refresh macOS exclude apps executables
+#[tauri::command]
+pub async fn refresh_mac_exclude_apps() -> CmdResult<()> {
+    MacExcludeAppsManager::global().refresh_executables().await.stringify_err()
 }

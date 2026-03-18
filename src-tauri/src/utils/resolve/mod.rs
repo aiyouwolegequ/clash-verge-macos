@@ -13,7 +13,7 @@ use crate::{
         tray::Tray,
     },
     feat,
-    module::{auto_backup::AutoBackupManager, lightweight::auto_lightweight_boot},
+    module::{auto_backup::AutoBackupManager, lightweight::auto_lightweight_boot, mac_exclude_apps::MacExcludeAppsManager},
     process::AsyncHandler,
     utils::{init, server, window_manager::WindowManager},
 };
@@ -76,6 +76,7 @@ pub fn resolve_setup_async() {
             init_hotkey(),
             init_auto_lightweight_boot(),
             init_auto_backup(),
+            init_mac_exclude_apps(),
         );
     });
 }
@@ -130,6 +131,16 @@ pub(super) async fn init_auto_lightweight_boot() {
 
 pub(super) async fn init_auto_backup() {
     logging_error!(Type::Setup, AutoBackupManager::global().init().await);
+}
+
+#[cfg(target_os = "macos")]
+pub(super) async fn init_mac_exclude_apps() {
+    logging_error!(Type::Setup, MacExcludeAppsManager::global().init().await);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) async fn init_mac_exclude_apps() {
+    // No-op on non-macOS platforms
 }
 
 pub fn init_signal() {
