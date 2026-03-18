@@ -192,4 +192,51 @@ impl NetworkManager {
 
         Ok(HttpResponse::new(status, headers, body))
     }
+
+    pub async fn head_with_interrupt(
+        &self,
+        url: &str,
+        proxy_type: ProxyType,
+        timeout_secs: Option<u64>,
+        user_agent: Option<String>,
+        accept_invalid_certs: bool,
+    ) -> Result<HttpResponse> {
+        let mut parsed = Url::parse(url)?;
+        let mut extra_headers = HeaderMap::new();
+
+        if !parsed.username().is_empty()
+            && let Some(pass) = parsed.password()
+        {
+            let auth_str = format!("{}:{}", parsed.username(), pass);
+            let encoded = general_purpose::STANDARD.encode(auth_str);
+            extra_headers.insert("Authorization", HeaderValue::from_str(&format!("Basic {}", encoded))?);
+        }
+
+        parsed.set_username("").ok();
+        parsed.set_password(None).ok();
+
+        // 创建请求
+        let client = self
+            .create_request(proxy_type, timeout_secs, user_agent, accept_invalid_certs)
+            .await?;
+
+        let mut request_builder = client.head(parsed);
+
+        for (key, value) in extra_headers.iter() {
+            request_builder = request_builder.header(key, value);
+        }
+
+        let response = match request_builder.send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                return Err(anyhow::anyhow!("Request failed: {}", e));
+            }
+        };
+
+        let status = response.status();
+        let headers = response.headers().to_owned();
+
+        // HEAD request has no body
+        Ok(HttpResponse::new(status, headers, "".into()))
+    }
 }

@@ -107,10 +107,12 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
     use crate::utils::network::{NetworkManager, ProxyType};
     use tokio::time::Instant;
 
-    let tun_mode = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
+    let verge = Config::verge().await.latest_arc();
+    let proxy_enabled = verge.enable_system_proxy.unwrap_or(false) || verge.enable_tun_mode.unwrap_or(false);
+    let tun_mode = verge.enable_tun_mode.unwrap_or(false);
 
-    // 如果是TUN模式，不使用代理，否则使用自身代理
-    let proxy_type = if !tun_mode {
+    // 如果启用了代理且不在TUN模式下，则通过内部代理访问测试
+    let proxy_type = if proxy_enabled && !tun_mode {
         ProxyType::Localhost
     } else {
         ProxyType::None
@@ -118,17 +120,25 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
 
     let user_agent = Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0".into());
 
+    let is_https = url.to_lowercase().starts_with("https");
     let start = Instant::now();
 
-    let response = NetworkManager::new()
-        .get_with_interrupt(&url, proxy_type, Some(10), user_agent, false)
-        .await;
+    let response = if is_https {
+        NetworkManager::new()
+            .get_with_interrupt(&url, proxy_type, Some(10), user_agent, false)
+            .await
+    } else {
+        NetworkManager::new()
+            .head_with_interrupt(&url, proxy_type, Some(10), user_agent, false)
+            .await
+    };
 
     match response {
         Ok(response) => {
             logging!(trace, Type::Network, "test_delay response: {response:#?}");
             if response.status().is_success() {
-                Ok(start.elapsed().as_millis() as u32)
+                // Ensure at least 1ms — frontend treats 0 as timeout
+                Ok((start.elapsed().as_millis() as u32).max(1))
             } else {
                 Ok(10000u32)
             }

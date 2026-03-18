@@ -5,6 +5,8 @@
 - **后端优化**：
   - 改进轻量模式窗口关闭与焦点监听管理 ([#upstream](https://github.com/clash-verge-rev/clash-verge-rev))
   - 优化延迟测试逻辑：非代理环境下跳过代理请求，HTTP 测试改用 HEAD 请求。
+- **构建优化**：
+  - **支持 macOS 交叉编译 Windows x64**：集成 `cargo-xwin` 与 `nsis` 环境，实现在 macOS 下直接构建 Windows 安装包。
 - **前端优化**：
   - 系统代理与 TUN 切换实现乐观更新，响应更迅速。
   - 引入任务队列处理频繁切换开关时的竞态问题。
