@@ -1,4 +1,3 @@
-// #[cfg(not(feature = "tracing"))]
 use crate::{
     config::{Config, IClashTemp, IProfiles, IVerge},
     constants,
@@ -110,13 +109,13 @@ pub async fn delete_log() -> Result<()> {
 
     let mut log_read_dir = fs::read_dir(&log_dir).await?;
     while let Some(entry) = log_read_dir.next_entry().await? {
-        std::mem::drop(process_file(entry).await);
+        let _ = process_file(entry).await;
     }
 
     let service_log_dir = log_dir.join("service");
     let mut service_log_read_dir = fs::read_dir(service_log_dir).await?;
     while let Some(entry) = service_log_read_dir.next_entry().await? {
-        std::mem::drop(process_file(entry).await);
+        let _ = process_file(entry).await;
     }
 
     Ok(())
@@ -145,7 +144,6 @@ async fn init_dns_config() -> Result<()> {
                 Value::String("*.arpa".into()),
                 Value::String("time.*.com".into()),
                 Value::String("ntp.*.com".into()),
-                Value::String("time.*.com".into()),
                 Value::String("+.market.xiaomi.com".into()),
                 Value::String("localhost.ptlogin2.qq.com".into()),
                 Value::String("*.msftncsi.com".into()),
@@ -287,17 +285,7 @@ async fn initialize_config_files() -> Result<()> {
     Ok(())
 }
 
-/// Initialize all the config files
-/// before tauri setup
 pub async fn init_config() -> Result<()> {
-    // We do not need init_portable_flag here anymore due to lib.rs will to the things
-    // let _ = dirs::init_portable_flag();
-
-    // We do not need init_log here anymore due to resolve will to the things
-    // if let Err(e) = init_log().await {
-    //     eprintln!("Failed to initialize logging: {}", e);
-    // }
-
     ensure_directories().await?;
 
     initialize_config_files().await?;
@@ -323,10 +311,10 @@ pub async fn init_resources() -> Result<()> {
     let res_dir = dirs::app_resources_dir()?;
 
     if !app_dir.exists() {
-        std::mem::drop(fs::create_dir_all(&app_dir).await);
+        let _ = fs::create_dir_all(&app_dir).await;
     }
     if !res_dir.exists() {
-        std::mem::drop(fs::create_dir_all(&res_dir).await);
+        let _ = fs::create_dir_all(&res_dir).await;
     }
 
     let file_list = ["Country.mmdb", "geoip.dat", "geosite.dat"];

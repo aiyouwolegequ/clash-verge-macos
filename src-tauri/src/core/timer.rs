@@ -156,15 +156,16 @@ impl Timer {
 
         // Apply changes - first collect operations to perform without holding locks
         let mut operations_to_add: Vec<(String, TaskID, u64)> = Vec::new();
-        let _operations_to_remove: Vec<String> = Vec::new();
 
         // Perform sync operations while holding locks
         {
+            let mut timer_map = self.timer_map.write();
+            let delay_timer = self.delay_timer.write();
             for (uid, diff) in diff_map {
                 match diff {
                     DiffFlag::Del(tid) => {
-                        self.timer_map.write().remove(&uid);
-                        let value = self.delay_timer.write().remove_task(tid);
+                        timer_map.remove(&uid);
+                        let value = delay_timer.remove_task(tid);
                         if let Err(e) = value {
                             logging!(
                                 warn,
@@ -185,12 +186,12 @@ impl Timer {
                             last_run: chrono::Local::now().timestamp(),
                         };
 
-                        self.timer_map.write().insert(uid.clone(), task);
+                        timer_map.insert(uid.clone(), task);
                         operations_to_add.push((uid, tid, interval));
                     }
                     DiffFlag::Mod(tid, interval) => {
                         // Remove old task first
-                        let value = self.delay_timer.write().remove_task(tid);
+                        let value = delay_timer.remove_task(tid);
                         if let Err(e) = value {
                             logging!(
                                 warn,
@@ -209,11 +210,13 @@ impl Timer {
                             last_run: chrono::Local::now().timestamp(),
                         };
 
-                        self.timer_map.write().insert(uid.clone(), task);
+                        timer_map.insert(uid.clone(), task);
                         operations_to_add.push((uid, tid, interval));
                     }
                 }
             }
+            drop(timer_map);
+            drop(delay_timer);
         } // Locks are dropped here
 
         // Now perform async operations without holding locks

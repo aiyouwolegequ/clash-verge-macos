@@ -43,7 +43,7 @@ fn uninstall_service() -> Result<()> {
     let uninstall_path = binary_path.with_file_name("clash-verge-service-uninstall.exe");
 
     if !uninstall_path.exists() {
-        bail!(format!("uninstaller not found: {uninstall_path:?}"));
+        bail!("uninstaller not found: {uninstall_path:?}");
     }
 
     let token = Token::with_current_process()?;
@@ -76,7 +76,7 @@ fn install_service() -> Result<()> {
     let install_path = binary_path.with_file_name("clash-verge-service-install.exe");
 
     if !install_path.exists() {
-        bail!(format!("installer not found: {install_path:?}"));
+        bail!("installer not found: {install_path:?}");
     }
 
     let token = Token::with_current_process()?;
@@ -117,7 +117,7 @@ fn uninstall_service() -> Result<()> {
     let uninstall_path = tauri::utils::platform::current_exe()?.with_file_name("clash-verge-service-uninstall");
 
     if !uninstall_path.exists() {
-        bail!(format!("uninstaller not found: {uninstall_path:?}"));
+        bail!("uninstaller not found: {uninstall_path:?}");
     }
 
     let uninstall_shell: String = uninstall_path.to_string_lossy().replace(" ", "\\ ");
@@ -173,7 +173,7 @@ fn install_service() -> Result<()> {
     let install_path = tauri::utils::platform::current_exe()?.with_file_name("clash-verge-service-install");
 
     if !install_path.exists() {
-        bail!(format!("installer not found: {install_path:?}"));
+        bail!("installer not found: {install_path:?}");
     }
 
     let install_shell: String = install_path.to_string_lossy().replace(" ", "\\ ");
@@ -236,7 +236,7 @@ fn uninstall_service() -> Result<()> {
     let uninstall_path = binary_path.with_file_name("clash-verge-service-uninstall");
 
     if !uninstall_path.exists() {
-        bail!(format!("uninstaller not found: {uninstall_path:?}"));
+        bail!("uninstaller not found: {uninstall_path:?}");
     }
 
     let uninstall_shell: String = uninstall_path.to_string_lossy().into_owned();
@@ -269,7 +269,7 @@ fn install_service() -> Result<()> {
     let install_path = binary_path.with_file_name("clash-verge-service-install");
 
     if !install_path.exists() {
-        bail!(format!("installer not found: {install_path:?}"));
+        bail!("installer not found: {install_path:?}");
     }
 
     let install_shell: String = install_path.to_string_lossy().into_owned();
@@ -325,7 +325,7 @@ fn reinstall_service() -> Result<()> {
     match install_service() {
         Ok(_) => Ok(()),
         Err(err) => {
-            bail!(format!("failed to install service: {err}"))
+            bail!("failed to install service: {err}")
         }
     }
 }
@@ -487,7 +487,7 @@ impl ServiceManager {
 
     pub async fn init(&mut self) -> Result<()> {
         if let Err(e) = clash_verge_service_ipc::connect().await {
-            self.0 = ServiceStatus::Unavailable("服务连接失败: {e}".to_string());
+            self.0 = ServiceStatus::Unavailable(format!("服务连接失败: {e}"));
             return Err(e);
         }
         Ok(())

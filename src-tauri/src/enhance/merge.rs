@@ -20,14 +20,17 @@ pub fn use_merge(merge: &Mapping, config: Mapping) -> Mapping {
 
     deep_merge(&mut config, Value::from(merge));
 
-    config.as_mapping().cloned().unwrap_or_else(|| {
-        logging!(
-            error,
-            Type::Core,
-            "Failed to convert merged config to mapping, using empty mapping"
-        );
-        Mapping::new()
-    })
+    match config {
+        Value::Mapping(m) => m,
+        _ => {
+            logging!(
+                error,
+                Type::Core,
+                "Failed to convert merged config to mapping, using empty mapping"
+            );
+            Mapping::new()
+        }
+    }
 }
 
 #[test]

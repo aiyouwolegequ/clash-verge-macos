@@ -22,8 +22,8 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const TIMEOUT_UPLOAD: u64 = 300; // 上传超时 5 分钟
 const TIMEOUT_DOWNLOAD: u64 = 300; // 下载超时 5 分钟
-const TIMEOUT_LIST: u64 = 3; // 列表超时 30 秒
-const TIMEOUT_DELETE: u64 = 3; // 删除超时 30 秒
+const TIMEOUT_LIST: u64 = 3; // 列表超时 3 秒
+const TIMEOUT_DELETE: u64 = 3; // 删除超时 3 秒
 
 #[derive(Clone)]
 struct WebDavConfig {
@@ -112,6 +112,7 @@ impl WebDavClient {
             .set_agent(
                 reqwest::Client::builder()
                     .use_rustls_tls()
+                    // Allow invalid certs as users may use self-signed certs for their WebDAV server
                     .danger_accept_invalid_certs(true)
                     .timeout(Duration::from_secs(op.timeout()))
                     .user_agent(format!("clash-verge/{APP_VERSION} ({OS} WebDAV-Client)"))

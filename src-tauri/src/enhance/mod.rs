@@ -19,7 +19,6 @@ use crate::{config::IVerge, constants};
 use clash_verge_logging::{Type, logging};
 use serde_yaml_ng::{Mapping, Value};
 use smartstring::alias::String;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use tokio::fs;
 
@@ -141,6 +140,24 @@ async fn get_config_values() -> ConfigValues {
     }
 }
 
+async fn resolve_chain_item(
+    profiles_arc: &crate::config::IProfiles,
+    uid: &str,
+    default_uid: &str,
+    default_data: ChainType,
+) -> ChainItem {
+    let item = profiles_arc.get_item(uid).ok().cloned();
+    if let Some(item) = item {
+        <Option<ChainItem>>::from_async(&item).await
+    } else {
+        None
+    }
+    .unwrap_or_else(|| ChainItem {
+        uid: default_uid.to_string().into(),
+        data: default_data,
+    })
+}
+
 #[allow(clippy::cognitive_complexity)]
 async fn collect_profile_items() -> ProfileItems {
     let profiles = Config::profiles().await;
@@ -165,128 +182,22 @@ async fn collect_profile_items() -> ProfileItems {
         }
     };
 
-    let merge_uid: Cow<'_, str> = if let Some(s) = current_item.current_merge() {
-        Cow::Borrowed(s)
-    } else {
-        Cow::Owned("Merge".into())
-    };
-    let script_uid: Cow<'_, str> = if let Some(s) = current_item.current_script() {
-        Cow::Borrowed(s)
-    } else {
-        Cow::Owned("Script".into())
-    };
-    let rules_uid: Cow<'_, str> = if let Some(s) = current_item.current_rules() {
-        Cow::Borrowed(s)
-    } else {
-        Cow::Owned("Rules".into())
-    };
-    let proxies_uid: Cow<'_, str> = if let Some(s) = current_item.current_proxies() {
-        Cow::Borrowed(s)
-    } else {
-        Cow::Owned("Proxies".into())
-    };
-    let groups_uid: Cow<'_, str> = if let Some(s) = current_item.current_groups() {
-        Cow::Borrowed(s)
-    } else {
-        Cow::Owned("Groups".into())
-    };
+    let merge_uid = current_item.current_merge().map(|s| s.as_str()).unwrap_or("Merge");
+    let script_uid = current_item.current_script().map(|s| s.as_str()).unwrap_or("Script");
+    let rules_uid = current_item.current_rules().map(|s| s.as_str()).unwrap_or("Rules");
+    let proxies_uid = current_item.current_proxies().map(|s| s.as_str()).unwrap_or("Proxies");
+    let groups_uid = current_item.current_groups().map(|s| s.as_str()).unwrap_or("Groups");
 
-    let name = profiles_arc
-        .get_item(current_profile_uid)
-        .ok()
-        .and_then(|item| item.name.clone())
-        .unwrap_or_default();
+    let name = current_item.name.clone().unwrap_or_default();
 
-    let merge_item = {
-        let item = profiles_arc.get_item(&merge_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Merge(Mapping::new()),
-    });
-
-    let script_item = {
-        let item = profiles_arc.get_item(&script_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Script(tmpl::ITEM_SCRIPT.into()),
-    });
-
-    let rules_item = {
-        let item = profiles_arc.get_item(&rules_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Rules(SeqMap::default()),
-    });
-
-    let proxies_item = {
-        let item = profiles_arc.get_item(&proxies_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Proxies(SeqMap::default()),
-    });
-
-    let groups_item = {
-        let item = profiles_arc.get_item(&groups_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Groups(SeqMap::default()),
-    });
-
-    let global_merge = {
-        let item = profiles_arc.get_item("Merge").ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "Merge".into(),
-        data: ChainType::Merge(Mapping::new()),
-    });
-
-    let global_script = {
-        let item = profiles_arc.get_item("Script").ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "Script".into(),
-        data: ChainType::Script(tmpl::ITEM_SCRIPT.into()),
-    });
+    let merge_item = resolve_chain_item(&profiles_arc, merge_uid, "", ChainType::Merge(Mapping::new())).await;
+    let script_item = resolve_chain_item(&profiles_arc, script_uid, "", ChainType::Script(tmpl::ITEM_SCRIPT.into())).await;
+    let rules_item = resolve_chain_item(&profiles_arc, rules_uid, "", ChainType::Rules(SeqMap::default())).await;
+    let proxies_item = resolve_chain_item(&profiles_arc, proxies_uid, "", ChainType::Proxies(SeqMap::default())).await;
+    let groups_item = resolve_chain_item(&profiles_arc, groups_uid, "", ChainType::Groups(SeqMap::default())).await;
+    let global_merge = resolve_chain_item(&profiles_arc, "Merge", "Merge", ChainType::Merge(Mapping::new())).await;
+    let global_script =
+        resolve_chain_item(&profiles_arc, "Script", "Script", ChainType::Script(tmpl::ITEM_SCRIPT.into())).await;
 
     drop(profiles_arc);
 
@@ -314,7 +225,7 @@ fn process_global_items(
 
     if let ChainType::Merge(merge) = global_merge.data {
         exists_keys.extend(use_keys(&merge));
-        config = use_merge(&merge, config.to_owned());
+        config = use_merge(&merge, config);
     }
 
     if let ChainType::Script(script) = global_script.data {
@@ -346,20 +257,20 @@ fn process_profile_items(
     profile_name: &String,
 ) -> (Mapping, Vec<String>, HashMap<String, ResultLog>) {
     if let ChainType::Rules(rules) = rules_item.data {
-        config = use_seq(rules, config.to_owned(), "rules");
+        config = use_seq(rules, config, "rules");
     }
 
     if let ChainType::Proxies(proxies) = proxies_item.data {
-        config = use_seq(proxies, config.to_owned(), "proxies");
+        config = use_seq(proxies, config, "proxies");
     }
 
     if let ChainType::Groups(groups) = groups_item.data {
-        config = use_seq(groups, config.to_owned(), "proxy-groups");
+        config = use_seq(groups, config, "proxy-groups");
     }
 
     if let ChainType::Merge(merge) = merge_item.data {
         exists_keys.extend(use_keys(&merge));
-        config = use_merge(&merge, config.to_owned());
+        config = use_merge(&merge, config);
     }
 
     if let ChainType::Script(script) = script_item.data {
