@@ -188,26 +188,47 @@ async fn insert_traffic_deltas(deltas: &[(String, String, String, u64, u64)]) ->
 
 #[allow(clippy::significant_drop_tightening)]
 pub async fn query_traffic(period: &str) -> anyhow::Result<Vec<AppTrafficStat>> {
+    use chrono::{Datelike as _, Local, NaiveTime, TimeZone as _, Utc};
+
+    let now = Local::now();
+    let midnight = NaiveTime::from_hms_opt(0, 0, 0).unwrap_or_default();
+    let start_local = match period {
+        "day" => {
+            // 今日 00:00:00
+            now.date_naive().and_time(midnight)
+        }
+        "week" => {
+            // 本周一 00:00:00（周一=0）
+            let days_since_monday = now.weekday().num_days_from_monday();
+            let monday = now.date_naive() - chrono::Duration::days(days_since_monday as i64);
+            monday.and_time(midnight)
+        }
+        "month" => {
+            // 本月 1 日 00:00:00
+            let first_of_month = now.date_naive().with_day(1).unwrap_or_else(|| now.date_naive());
+            first_of_month.and_time(midnight)
+        }
+        _ => now.date_naive().and_time(midnight),
+    };
+
+    // 将本地日历边界时间转换为 UTC 字符串（SQLite CURRENT_TIMESTAMP 存的是 UTC）
+    let start_utc = Local
+        .from_local_datetime(&start_local)
+        .single()
+        .unwrap_or_else(|| Utc::now().with_timezone(&Local))
+        .with_timezone(&Utc);
+    let start_str = start_utc.format("%Y-%m-%d %H:%M:%S").to_string();
+
     let mut db_guard = DB_CONN.lock().await;
     if let Some(conn) = db_guard.as_mut() {
-        let modifier = match period {
-            "day" => "'-1 day'",
-            "week" => "'-7 days'",
-            "month" => "'-1 month'",
-            _ => "'-1 day'",
-        };
-
-        let query = format!(
-            "SELECT process_name, process_path, traffic_mode, SUM(upload_bytes), SUM(download_bytes) 
+        let query = "SELECT process_name, process_path, traffic_mode, SUM(upload_bytes), SUM(download_bytes) 
              FROM app_traffic 
-             WHERE timestamp >= datetime('now', {})
+             WHERE timestamp >= ?1
              GROUP BY process_name, process_path, traffic_mode 
-             ORDER BY SUM(download_bytes) DESC",
-            modifier
-        );
+             ORDER BY SUM(download_bytes) DESC";
 
-        let mut stmt = conn.prepare(&query)?;
-        let rows = stmt.query_map([], |row| {
+        let mut stmt = conn.prepare(query)?;
+        let rows = stmt.query_map(params![start_str], |row| {
             let up: i64 = row.get(3)?;
             let down: i64 = row.get(4)?;
             Ok(AppTrafficStat {
