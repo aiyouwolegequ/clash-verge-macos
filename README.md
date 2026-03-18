@@ -3,6 +3,9 @@
   <br>
   Continuation of <a href="https://github.com/zzzgydi/clash-verge">Clash Verge</a>
   <br>
+  <a href="https://github.com/aiyouwolegequ/clash-verge-macos/releases">
+    <img src="https://img.shields.io/badge/version-2.5.6-blue.svg" alt="Version" />
+  </a>
 </h1>
 
 <h3 align="center">
