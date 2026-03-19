@@ -13,7 +13,9 @@ use crate::{
         tray::Tray,
     },
     feat,
-    module::{auto_backup::AutoBackupManager, lightweight::auto_lightweight_boot, mac_exclude_apps::MacExcludeAppsManager},
+    module::{
+        auto_backup::AutoBackupManager, lightweight::auto_lightweight_boot, mac_exclude_apps::MacExcludeAppsManager,
+    },
     process::AsyncHandler,
     utils::{init, server, window_manager::WindowManager},
 };
