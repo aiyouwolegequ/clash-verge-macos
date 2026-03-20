@@ -45,6 +45,15 @@ Supports Windows (x64/x86), Linux (x64/arm64) and macOS 10.15+ (intel/apple).
 
 #### 安装说明和常见问题，请到 [文档页](https://clash-verge-rev.github.io/) 查看
 
+> [!TIP]
+> **macOS "已损坏，无法打开" (App is damaged and cannot be opened)**
+>
+> 如果您在 macOS 上安装后提示 App 已损坏，请执行以下命令：
+>
+> ```bash
+> sudo xattr -rd com.apple.quarantine /Applications/Clash\ Verge.app
+> ```
+
 ---
 
 ### TG 频道: [@clash_verge_rev](https://t.me/clash_verge_re)
