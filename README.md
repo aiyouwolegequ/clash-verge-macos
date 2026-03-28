@@ -4,7 +4,7 @@
   Continuation of <a href="https://github.com/zzzgydi/clash-verge">Clash Verge</a>
   <br>
   <a href="https://github.com/aiyouwolegequ/clash-verge-macos/releases">
-    <img src="https://img.shields.io/badge/version-2.5.9-blue.svg" alt="Version" />
+    <img src="https://img.shields.io/badge/version-2.6.0-blue.svg" alt="Version" />
   </a>
 </h1>
 

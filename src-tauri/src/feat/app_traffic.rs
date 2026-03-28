@@ -31,8 +31,7 @@ pub fn init_app_traffic_daemon() {
 
         logging!(info, Type::Core, "App traffic daemon started");
 
-        let mut last_upload: HashMap<(String, String, String), u64> = HashMap::new();
-        let mut last_download: HashMap<(String, String, String), u64> = HashMap::new();
+        let mut last_connection_stats: HashMap<String, (u64, u64)> = HashMap::new();
 
         loop {
             sleep(Duration::from_secs(5)).await;
@@ -53,8 +52,8 @@ pub fn init_app_traffic_daemon() {
                 }
             };
 
-            let mut current_upload: HashMap<(String, String, String), u64> = HashMap::new();
-            let mut current_download: HashMap<(String, String, String), u64> = HashMap::new();
+            let mut current_connection_stats: HashMap<String, (u64, u64)> = HashMap::new();
+            let mut deltas: HashMap<(String, String, String), (u64, u64)> = HashMap::new();
 
             if let Some(conns) = connections.connections {
                 for conn in conns {
@@ -88,41 +87,33 @@ pub fn init_app_traffic_daemon() {
                     };
 
                     let key = (display_name, traffic_mode, process_path);
-                    *current_upload.entry(key.clone()).or_insert(0) += conn.upload;
-                    *current_download.entry(key).or_insert(0) += conn.download;
-                }
+                    current_connection_stats.insert(conn.id.clone(), (conn.upload, conn.download));
 
-                let mut deltas = Vec::new();
-                for (key, total_up) in &current_upload {
-                    let prev_up = last_upload.get(key).unwrap_or(&0);
-                    let delta_up = if total_up > prev_up {
-                        total_up - prev_up
-                    } else {
-                        *total_up
-                    };
+                    let prev = last_connection_stats.get(&conn.id).copied().unwrap_or((0, 0));
 
-                    let total_down = current_download.get(key).unwrap_or(&0);
-                    let prev_down = last_download.get(key).unwrap_or(&0);
-                    let delta_down = if total_down > prev_down {
-                        total_down - prev_down
-                    } else {
-                        *total_down
-                    };
+                    let delta_up = conn.upload.saturating_sub(prev.0);
+                    let delta_down = conn.download.saturating_sub(prev.1);
 
                     if delta_up > 0 || delta_down > 0 {
-                        deltas.push((key.0.clone(), key.1.clone(), key.2.clone(), delta_up, delta_down));
+                        let entry = deltas.entry(key).or_insert((0, 0));
+                        entry.0 += delta_up;
+                        entry.1 += delta_down;
                     }
                 }
 
-                if !deltas.is_empty()
-                    && let Err(e) = insert_traffic_deltas(&deltas).await
+                let mut db_deltas = Vec::new();
+                for (key, (up, down)) in deltas {
+                    db_deltas.push((key.0, key.1, key.2, up, down));
+                }
+
+                if !db_deltas.is_empty()
+                    && let Err(e) = insert_traffic_deltas(&db_deltas).await
                 {
                     logging!(error, Type::Core, "Failed to insert traffic: {}", e);
                 }
             }
 
-            last_upload = current_upload;
-            last_download = current_download;
+            last_connection_stats = current_connection_stats;
         }
     });
 }
