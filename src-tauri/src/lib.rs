@@ -218,6 +218,7 @@ mod app_init {
             cmd::get_unlock_items,
             cmd::check_media_unlock,
             cmd::get_app_traffic_stats,
+            cmd::get_global_traffic_stats,
             cmd::clear_app_traffic_stats,
             cmd::get_macos_apps,
             cmd::refresh_mac_exclude_apps,

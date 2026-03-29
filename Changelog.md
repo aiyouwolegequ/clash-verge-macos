@@ -1,3 +1,20 @@
+## v2.6.2
+
+### 🚀 优化改进
+
+- **App 流量统计精确度提升**：
+  - 新增 `global_traffic` 表，记录 Mihomo 全局流量累计值，提供准确的流量基准数据
+  - 优化进程识别逻辑：当 `processPath` 为空时，优先使用 `process` 字段作为备选标识
+  - 添加退避机制：Mihomo 连接失败时自动延长轮询间隔（3s → 30s），恢复后立即回到 3s
+  - 缩短默认轮询间隔从 5 秒降至 3 秒，减少连接关闭时的流量丢失
+- **新增全局流量查询接口**：`get_global_traffic_stats` 命令可获取指定时间段内的准确全局流量
+
+### 📝 技术细节
+
+- 新增 `GlobalTrafficStat` 结构体：`{ upload_bytes, download_bytes }`
+- `get_connections()` API 返回的 `upload_total`/`download_total` 为 Mihomo 内部累计值，可作为流量基准
+- App 流量统计仍存在少量丢失（Mihomo 连接关闭到下次轮询间隔内的流量），但可通过全局流量进行核对修正
+
 ## v2.5.9
 
 ### ✨ 新增功能

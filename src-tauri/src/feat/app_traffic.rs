@@ -13,11 +13,25 @@ use clash_verge_logging::{Type, logging};
 
 static DB_CONN: Lazy<Arc<Mutex<Option<Connection>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
+/// Minimum polling interval (seconds)
+const MIN_POLL_INTERVAL: u64 = 3;
+/// Maximum polling interval (seconds) - for backoff
+const MAX_POLL_INTERVAL: u64 = 30;
+/// Consecutive failures before increasing interval
+const FAILURES_BEFORE_BACKOFF: u32 = 2;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppTrafficStat {
     pub process_name: String,
     pub process_path: String,
     pub traffic_mode: String,
+    pub upload_bytes: u64,
+    pub download_bytes: u64,
+}
+
+/// Global traffic statistics (accurate totals from Mihomo)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GlobalTrafficStat {
     pub upload_bytes: u64,
     pub download_bytes: u64,
 }
@@ -32,15 +46,29 @@ pub fn init_app_traffic_daemon() {
         logging!(info, Type::Core, "App traffic daemon started");
 
         let mut last_connection_stats: HashMap<String, (u64, u64)> = HashMap::new();
+        let mut current_interval = MIN_POLL_INTERVAL;
+        let mut consecutive_failures: u32 = 0;
 
         loop {
-            sleep(Duration::from_secs(5)).await;
+            sleep(Duration::from_secs(current_interval)).await;
 
             let connections = {
                 let mihomo = handle::Handle::mihomo().await;
                 match mihomo.get_connections().await {
                     Ok(c) => c,
                     Err(e) => {
+                        consecutive_failures += 1;
+                        if consecutive_failures >= FAILURES_BEFORE_BACKOFF {
+                            // Exponential backoff: 3 -> 6 -> 12 -> 24 -> 30 (max)
+                            current_interval = (current_interval * 2).min(MAX_POLL_INTERVAL);
+                            logging!(
+                                warn,
+                                Type::Core,
+                                "App traffic daemon: {} consecutive failures, interval increased to {}s",
+                                consecutive_failures,
+                                current_interval
+                            );
+                        }
                         logging!(
                             trace,
                             Type::Core,
@@ -52,24 +80,56 @@ pub fn init_app_traffic_daemon() {
                 }
             };
 
+            // Success: reset backoff
+            if consecutive_failures >= FAILURES_BEFORE_BACKOFF {
+                logging!(
+                    info,
+                    Type::Core,
+                    "App traffic daemon: connection restored, interval reset to {}s",
+                    MIN_POLL_INTERVAL
+                );
+            }
+            consecutive_failures = 0;
+            current_interval = MIN_POLL_INTERVAL;
+
+            // Record global traffic snapshot (accurate totals from Mihomo)
+            let global_up = connections.upload_total;
+            let global_down = connections.download_total;
+            if let Err(e) = insert_global_traffic(global_up, global_down).await {
+                logging!(
+                    error,
+                    Type::Core,
+                    "Failed to insert global traffic: {}",
+                    e
+                );
+            }
+
             let mut current_connection_stats: HashMap<String, (u64, u64)> = HashMap::new();
             let mut deltas: HashMap<(String, String, String), (u64, u64)> = HashMap::new();
 
             if let Some(conns) = connections.connections {
                 for conn in conns {
-                    let process_path = conn.metadata.process_path;
-                    if process_path.is_empty() {
-                        continue;
-                    }
+                    let process_path = &conn.metadata.process_path;
+                    let process_name = &conn.metadata.process;
 
-                    let mut display_name = process_path.clone();
-                    if process_path.starts_with("/Applications/") && process_path.contains(".app/") {
-                        if let Some(app_idx) = process_path.find(".app/") {
-                            display_name = process_path[14..app_idx + 4].to_string();
+                    // Use process_path if available, otherwise fall back to process name
+                    let (display_name, path_for_key) = if !process_path.is_empty() {
+                        let mut name = process_path.clone();
+                        if process_path.starts_with("/Applications/") && process_path.contains(".app/") {
+                            if let Some(app_idx) = process_path.find(".app/") {
+                                name = process_path[14..app_idx + 4].to_string();
+                            }
+                        } else if let Some(pos) = process_path.rfind('/') {
+                            name = process_path[pos + 1..].to_string();
                         }
-                    } else if let Some(pos) = process_path.rfind('/') {
-                        display_name = process_path[pos + 1..].to_string();
-                    }
+                        (name, process_path.clone())
+                    } else if !process_name.is_empty() {
+                        // Fallback to process name when process_path is empty
+                        (process_name.clone(), format!("<{}>", process_name))
+                    } else {
+                        // Skip only if both are empty (truly unknown process)
+                        continue;
+                    };
 
                     let is_direct = conn.chains.iter().any(|c| c.eq_ignore_ascii_case("direct"))
                         || conn.rule.eq_ignore_ascii_case("direct");
@@ -86,7 +146,7 @@ pub fn init_app_traffic_daemon() {
                         "代理".to_string()
                     };
 
-                    let key = (display_name, traffic_mode, process_path);
+                    let key = (display_name, traffic_mode, path_for_key);
                     current_connection_stats.insert(conn.id.clone(), (conn.upload, conn.download));
 
                     let prev = last_connection_stats.get(&conn.id).copied().unwrap_or((0, 0));
@@ -146,6 +206,22 @@ async fn setup_db() -> anyhow::Result<()> {
         [],
     )?;
 
+    // Global traffic table for accurate totals from Mihomo
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS global_traffic (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_bytes INTEGER NOT NULL,
+            download_bytes INTEGER NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_global_timestamp ON global_traffic (timestamp)",
+        [],
+    )?;
+
     let mut db_guard = DB_CONN.lock().await;
     *db_guard = Some(conn);
 
@@ -173,6 +249,18 @@ async fn insert_traffic_deltas(deltas: &[(String, String, String, u64, u64)]) ->
             }
         }
         tx.commit()?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::significant_drop_tightening)]
+async fn insert_global_traffic(upload_bytes: u64, download_bytes: u64) -> anyhow::Result<()> {
+    let mut db_guard = DB_CONN.lock().await;
+    if let Some(conn) = db_guard.as_mut() {
+        conn.execute(
+            "INSERT INTO global_traffic (upload_bytes, download_bytes) VALUES (?1, ?2)",
+            params![upload_bytes as i64, download_bytes as i64],
+        )?;
     }
     Ok(())
 }
@@ -212,10 +300,10 @@ pub async fn query_traffic(period: &str) -> anyhow::Result<Vec<AppTrafficStat>> 
 
     let mut db_guard = DB_CONN.lock().await;
     if let Some(conn) = db_guard.as_mut() {
-        let query = "SELECT process_name, process_path, traffic_mode, SUM(upload_bytes), SUM(download_bytes) 
-             FROM app_traffic 
+        let query = "SELECT process_name, process_path, traffic_mode, SUM(upload_bytes), SUM(download_bytes)
+             FROM app_traffic
              WHERE timestamp >= ?1
-             GROUP BY process_name, process_path, traffic_mode 
+             GROUP BY process_name, process_path, traffic_mode
              ORDER BY SUM(download_bytes) DESC";
 
         let mut stmt = conn.prepare(query)?;
@@ -240,11 +328,79 @@ pub async fn query_traffic(period: &str) -> anyhow::Result<Vec<AppTrafficStat>> 
     Ok(vec![])
 }
 
+/// Query accurate global traffic for a period
+/// Returns the delta between current Mihomo total and the total at period start
+#[allow(clippy::significant_drop_tightening)]
+pub async fn query_global_traffic(period: &str) -> anyhow::Result<Option<GlobalTrafficStat>> {
+    use chrono::{Datelike as _, Local, NaiveTime, TimeZone as _, Utc};
+
+    let now = Local::now();
+    let midnight = NaiveTime::from_hms_opt(0, 0, 0).unwrap_or_default();
+    let start_local = match period {
+        "day" => {
+            now.date_naive().and_time(midnight)
+        }
+        "week" => {
+            let days_since_monday = now.weekday().num_days_from_monday();
+            let monday = now.date_naive() - chrono::Duration::days(days_since_monday as i64);
+            monday.and_time(midnight)
+        }
+        "month" => {
+            let first_of_month = now.date_naive().with_day(1).unwrap_or_else(|| now.date_naive());
+            first_of_month.and_time(midnight)
+        }
+        _ => now.date_naive().and_time(midnight),
+    };
+
+    let start_utc = Local
+        .from_local_datetime(&start_local)
+        .single()
+        .unwrap_or_else(|| Utc::now().with_timezone(&Local))
+        .with_timezone(&Utc);
+    let start_str = start_utc.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let mut db_guard = DB_CONN.lock().await;
+    if let Some(conn) = db_guard.as_mut() {
+        // Get the first snapshot at or after period start
+        let start_query = "SELECT upload_bytes, download_bytes FROM global_traffic
+                           WHERE timestamp >= ?1 ORDER BY timestamp ASC LIMIT 1";
+
+        let mut start_stmt = conn.prepare(start_query)?;
+        let start_row = start_stmt.query_row(params![start_str], |row| {
+            Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
+        });
+
+        // Get the last snapshot
+        let end_query = "SELECT upload_bytes, download_bytes FROM global_traffic
+                         ORDER BY timestamp DESC LIMIT 1";
+
+        let mut end_stmt = conn.prepare(end_query)?;
+        let end_row = end_stmt.query_row([], |row| {
+            Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
+        });
+
+        match (start_row, end_row) {
+            (Ok((start_up, start_down)), Ok((end_up, end_down))) => {
+                // Calculate delta
+                let upload_delta = end_up.saturating_sub(start_up);
+                let download_delta = end_down.saturating_sub(start_down);
+                return Ok(Some(GlobalTrafficStat {
+                    upload_bytes: upload_delta,
+                    download_bytes: download_delta,
+                }));
+            }
+            _ => return Ok(None),
+        }
+    }
+    Ok(None)
+}
+
 #[allow(clippy::significant_drop_tightening)]
 pub async fn clear_traffic() -> anyhow::Result<()> {
     let mut db_guard = DB_CONN.lock().await;
     if let Some(conn) = db_guard.as_mut() {
         conn.execute("DELETE FROM app_traffic", [])?;
+        conn.execute("DELETE FROM global_traffic", [])?;
     }
     drop(db_guard);
     Ok(())

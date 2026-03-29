@@ -595,6 +595,16 @@ export async function clearAppTrafficStats() {
   });
 }
 
+export async function getGlobalTrafficStats(period: "day" | "week" | "month") {
+  return invoke<{
+    upload_bytes: number;
+    download_bytes: number;
+  } | null>("get_global_traffic_stats", { period }).catch((err) => {
+    showNotice.error(err);
+    return null;
+  });
+}
+
 export async function refreshMacExcludeApps() {
   return invoke<void>("refresh_mac_exclude_apps").catch((err) => {
     showNotice.error(err);
