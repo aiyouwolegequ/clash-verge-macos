@@ -96,12 +96,7 @@ pub fn init_app_traffic_daemon() {
             let global_up = connections.upload_total;
             let global_down = connections.download_total;
             if let Err(e) = insert_global_traffic(global_up, global_down).await {
-                logging!(
-                    error,
-                    Type::Core,
-                    "Failed to insert global traffic: {}",
-                    e
-                );
+                logging!(error, Type::Core, "Failed to insert global traffic: {}", e);
             }
 
             let mut current_connection_stats: HashMap<String, (u64, u64)> = HashMap::new();
@@ -337,9 +332,7 @@ pub async fn query_global_traffic(period: &str) -> anyhow::Result<Option<GlobalT
     let now = Local::now();
     let midnight = NaiveTime::from_hms_opt(0, 0, 0).unwrap_or_default();
     let start_local = match period {
-        "day" => {
-            now.date_naive().and_time(midnight)
-        }
+        "day" => now.date_naive().and_time(midnight),
         "week" => {
             let days_since_monday = now.weekday().num_days_from_monday();
             let monday = now.date_naive() - chrono::Duration::days(days_since_monday as i64);
