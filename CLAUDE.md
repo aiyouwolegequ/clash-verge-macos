@@ -292,6 +292,7 @@ pnpm release:deploytest       # 触发部署测试发布
 
 **构建清理**
 - 重新编译 v2.7.0 release DMG，确保打包产物仅包含 aarch64 Apple Silicon 资产，DMG 体积从 50 MB 降至 49 MB，内部无 x86_64 及 Windows 残留文件。
+- 修改 `src-tauri/tauri.conf.json` 和 `src-tauri/tauri.macos.conf.json` 的 `productName` 为 `Clash_Verge`，使后续构建的 DMG 文件名使用下划线格式（`Clash_Verge_2.7.0_aarch64.dmg`）。
 
 **测试验证**
 - 新增 3 个单元测试验证 `deduplicate_rules` 的去重行为：

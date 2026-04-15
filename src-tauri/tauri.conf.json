@@ -26,7 +26,7 @@
     "devUrl": "http://localhost:3000/",
     "removeUnusedCommands": true
   },
-  "productName": "Clash Verge",
+  "productName": "Clash_Verge",
   "identifier": "io.github.clash-verge-rev.clash-verge-rev",
   "plugins": {
     "updater": {
