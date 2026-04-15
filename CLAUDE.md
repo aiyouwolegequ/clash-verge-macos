@@ -268,6 +268,20 @@ pnpm release:deploytest       # 触发部署测试发布
 
 ## 变更记录
 
+### v2.7.1 (2026-04-15)
+
+**版本号**
+- 升级版本号：`2.7.0` → `2.7.1`（`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`）
+
+**命名规则修正**
+- 将 `tauri.conf.json` 和 `tauri.macos.conf.json` 的 `productName` 恢复为 `Clash Verge`，确保 macOS app bundle 名称为 `Clash Verge.app`，避免与旧版应用共存时产生混淆。
+- 新增 `scripts/rename-dmg.mjs`，在 `pnpm build` / `pnpm build:fast` 完成后自动将 DMG 文件名中的空格替换为下划线，生成 `Clash_Verge_2.7.1_aarch64.dmg`。
+- `package.json` 的 `build` / `build:fast` 脚本已链式调用重命名脚本，实现构建与重命名一键闭环。
+
+**构建验证**
+- `cargo check` 通过，`pnpm build` 成功生成 DMG。
+- 挂载验证：DMG 内 app 名称为 `Clash Verge.app`，`Info.plist` 中 `CFBundleShortVersionString` 为 `2.7.1`。
+
 ### v2.7.0 (2026-04-15)
 
 **版本号**
@@ -292,8 +306,9 @@ pnpm release:deploytest       # 触发部署测试发布
 
 **构建清理**
 - 重新编译 v2.7.0 release DMG，确保打包产物仅包含 aarch64 Apple Silicon 资产，DMG 体积从 50 MB 降至 49 MB，内部无 x86_64 及 Windows 残留文件。
-- 修改 `src-tauri/tauri.conf.json` 和 `src-tauri/tauri.macos.conf.json` 的 `productName` 为 `Clash_Verge`，使后续构建的 DMG 文件名使用下划线格式（`Clash_Verge_2.7.0_aarch64.dmg`）。
-- 每次构建完成后，给出 DMG 的完整绝对路径；文件名根据 `package.json` 的 `version` 和 `tauri.conf.json` 的 `productName` 动态拼接，不写死版本号。
+- `productName` 保持为 `Clash Verge`，使 app bundle 名称为 `Clash Verge.app`。
+- 新增 `scripts/rename-dmg.mjs` 脚本，在 `pnpm build` / `pnpm build:fast` 完成后自动将 DMG 文件名中的空格替换为下划线，生成 `Clash_Verge_{version}_aarch64.dmg`。
+- 每次构建完成后，给出 DMG 的完整绝对路径；文件名根据 `package.json` 的 `version` 动态拼接，不写死版本号。
 
 **测试验证**
 - 新增 3 个单元测试验证 `deduplicate_rules` 的去重行为：

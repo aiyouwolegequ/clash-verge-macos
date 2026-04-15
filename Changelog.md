@@ -1,3 +1,13 @@
+## v2.7.1
+
+### 🐞 修复问题
+
+- 修正 `productName` 回 `Clash Verge`，避免应用名称带下划线导致与旧版 `Clash Verge.app` 共存时产生混淆
+
+### ✨ 新增功能
+
+- 新增构建后自动重命名脚本 `scripts/rename-dmg.mjs`，在保持 app 名称为 `Clash Verge.app` 的同时，使 DMG 文件名使用下划线格式（`Clash_Verge_2.7.1_aarch64.dmg`）
+
 ## v2.7.0
 
 ### 🐞 修复问题
