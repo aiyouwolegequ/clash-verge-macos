@@ -290,6 +290,9 @@ pnpm release:deploytest       # 触发部署测试发布
   - Alpha版：`alpha-6c407f0`
 - 移除 `x86_64-apple-darwin` 内核二进制及所有非 macOS 平台文件，仅保留 Apple Silicon (aarch64) 支持。
 
+**构建清理**
+- 重新编译 v2.7.0 release DMG，确保打包产物仅包含 aarch64 Apple Silicon 资产，DMG 体积从 50 MB 降至 49 MB，内部无 x86_64 及 Windows 残留文件。
+
 **测试验证**
 - 新增 3 个单元测试验证 `deduplicate_rules` 的去重行为：
   - `deduplicate_string_rules_keeps_order_and_first_occurrence`
