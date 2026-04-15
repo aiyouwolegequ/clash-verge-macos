@@ -1,3 +1,26 @@
+## v2.7.0
+
+### 🐞 修复问题
+
+- 修复拖放导入订阅后配置未自动重载的问题（拖放后调用 `enhanceProfiles()`）
+
+### ✨ 新增功能
+
+- **Enhance 管道内置规则去重**：新增 `deduplicate_rules`，在配置生成阶段自动删除重复的字符串规则，保留首次出现的顺序
+- **Script 增强异步化与超时保护**：将 `use_script` 改为异步执行（`spawn_blocking` + 5 秒超时），防止 JS Script 死循环阻塞 Enhance 管道
+- 补齐 macOS `x86_64-apple-darwin` 缺失的 Mihomo sidecar 内核
+
+### 🚀 优化改进
+
+- **Mihomo 内核升级**：
+  - 稳定版更新至 `v1.19.23`
+  - Alpha 版更新至 `alpha-6c407f0`
+- 增加 Boa JS 引擎 `MAX_LOOP_ITERATIONS = 10_000_000` 限制，防止死循环
+
+### 📝 技术细节
+
+- `cargo test -p clash-verge` 新增 3 个去重相关单元测试，全量 35 个测试通过
+
 ## v2.6.2
 
 ### 🚀 优化改进
