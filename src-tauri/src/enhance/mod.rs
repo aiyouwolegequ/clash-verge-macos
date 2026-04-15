@@ -225,7 +225,7 @@ async fn collect_profile_items() -> ProfileItems {
     }
 }
 
-fn process_global_items(
+async fn process_global_items(
     mut config: Mapping,
     global_merge: ChainItem,
     global_script: ChainItem,
@@ -241,7 +241,7 @@ fn process_global_items(
 
     if let ChainType::Script(script) = global_script.data {
         let mut logs = vec![];
-        match use_script(script, &config, profile_name) {
+        match use_script(script, config.clone(), profile_name.clone()).await {
             Ok((res_config, res_logs)) => {
                 exists_keys.extend(use_keys(&res_config));
                 config = res_config;
@@ -256,7 +256,7 @@ fn process_global_items(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_profile_items(
+async fn process_profile_items(
     mut config: Mapping,
     mut exists_keys: Vec<String>,
     mut result_map: HashMap<String, ResultLog>,
@@ -286,7 +286,7 @@ fn process_profile_items(
 
     if let ChainType::Script(script) = script_item.data {
         let mut logs = vec![];
-        match use_script(script, &config, profile_name) {
+        match use_script(script, config.clone(), profile_name.clone()).await {
             Ok((res_config, res_logs)) => {
                 exists_keys.extend(use_keys(&res_config));
                 config = res_config;
@@ -377,27 +377,52 @@ async fn merge_default_config(
     config
 }
 
-fn apply_builtin_scripts(mut config: Mapping, clash_core: Option<String>, enable_builtin: bool) -> Mapping {
+async fn apply_builtin_scripts(mut config: Mapping, clash_core: Option<String>, enable_builtin: bool) -> Mapping {
     if enable_builtin {
-        ChainItem::builtin()
+        let items: Vec<_> = ChainItem::builtin()
             .into_iter()
             .filter(|(s, _)| s.is_support(clash_core.as_ref()))
             .map(|(_, c)| c)
-            .for_each(|item| {
-                logging!(debug, Type::Core, "run builtin script {}", item.uid);
-                if let ChainType::Script(script) = item.data {
-                    match use_script(script, &config, &String::from("")) {
-                        Ok((res_config, _)) => {
-                            config = res_config;
-                        }
-                        Err(err) => {
-                            logging!(error, Type::Core, "builtin script error `{err}`");
-                        }
+            .collect();
+        for item in items {
+            logging!(debug, Type::Core, "run builtin script {}", item.uid);
+            if let ChainType::Script(script) = item.data {
+                match use_script(script, config.clone(), String::from("")).await {
+                    Ok((res_config, _)) => {
+                        config = res_config;
+                    }
+                    Err(err) => {
+                        logging!(error, Type::Core, "builtin script error `{err}`");
                     }
                 }
-            });
+            }
+        }
     }
 
+    config
+}
+
+fn deduplicate_rules(mut config: Mapping) -> Mapping {
+    if let Some(Value::Sequence(rules)) = config.get("rules") {
+        let mut seen = HashSet::new();
+        let deduped: Vec<Value> = rules
+            .iter()
+            .filter(|rule| {
+                if let Value::String(s) = rule {
+                    if seen.contains(s) {
+                        false
+                    } else {
+                        seen.insert(s.clone());
+                        true
+                    }
+                } else {
+                    true
+                }
+            })
+            .cloned()
+            .collect();
+        config.insert("rules".into(), Value::Sequence(deduped));
+    }
     config
 }
 
@@ -543,7 +568,8 @@ pub async fn enhance() -> (Mapping, HashSet<String>, HashMap<String, ResultLog>)
     let profile_name = profile.profile_name;
 
     // process globals
-    let (config, exists_keys, result_map) = process_global_items(config, global_merge, global_script, &profile_name);
+    let (config, exists_keys, result_map) =
+        process_global_items(config, global_merge, global_script, &profile_name).await;
 
     // process profile-specific items
     let (config, exists_keys, result_map) = process_profile_items(
@@ -556,7 +582,8 @@ pub async fn enhance() -> (Mapping, HashSet<String>, HashMap<String, ResultLog>)
         merge_item,
         script_item,
         &profile_name,
-    );
+    )
+    .await;
 
     // merge default clash config
     let config = merge_default_config(
@@ -572,9 +599,10 @@ pub async fn enhance() -> (Mapping, HashSet<String>, HashMap<String, ResultLog>)
     .await;
 
     // builtin scripts
-    let mut config = apply_builtin_scripts(config, clash_core, enable_builtin);
+    let mut config = apply_builtin_scripts(config, clash_core, enable_builtin).await;
 
     config = cleanup_proxy_groups(config);
+    config = deduplicate_rules(config);
 
     config = use_tun(config, enable_tun);
     config = use_sort(config);
@@ -647,7 +675,7 @@ pub async fn enhance() -> (Mapping, HashSet<String>, HashMap<String, ResultLog>)
 #[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
-    use super::cleanup_proxy_groups;
+    use super::{cleanup_proxy_groups, deduplicate_rules};
 
     #[test]
     fn remove_missing_proxies_from_groups() {
@@ -802,5 +830,63 @@ proxy-groups:
             .expect("proxies should be a sequence");
         assert_eq!(proxies.len(), 1);
         assert_eq!(proxies[0].as_str(), Some("DIRECT"));
+    }
+
+    #[test]
+    fn deduplicate_string_rules_keeps_order_and_first_occurrence() {
+        let config_str = r#"
+rules:
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+  - DOMAIN-SUFFIX,duplicate.com,🚀 Proxy
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+  - IP-CIDR,192.168.0.0/16,🚀 Proxy,no-resolve
+  - DOMAIN-SUFFIX,duplicate.com,🚀 Proxy
+"#;
+
+        let mut config: serde_yaml_ng::Mapping =
+            serde_yaml_ng::from_str(config_str).expect("Failed to parse test yaml");
+        config = deduplicate_rules(config);
+
+        let rules = config
+            .get("rules")
+            .and_then(|v| v.as_sequence())
+            .cloned()
+            .expect("rules should be a sequence");
+
+        assert_eq!(rules.len(), 3);
+        assert_eq!(rules[0].as_str(), Some("DOMAIN-SUFFIX,example.com,🚀 Proxy"));
+        assert_eq!(rules[1].as_str(), Some("DOMAIN-SUFFIX,duplicate.com,🚀 Proxy"));
+        assert_eq!(rules[2].as_str(), Some("IP-CIDR,192.168.0.0/16,🚀 Proxy,no-resolve"));
+    }
+
+    #[test]
+    fn deduplicate_rules_preserves_non_string_rules() {
+        let config_str = r#"
+rules:
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+  - 123
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+"#;
+
+        let mut config: serde_yaml_ng::Mapping =
+            serde_yaml_ng::from_str(config_str).expect("Failed to parse test yaml");
+        config = deduplicate_rules(config);
+
+        let rules = config
+            .get("rules")
+            .and_then(|v| v.as_sequence())
+            .cloned()
+            .expect("rules should be a sequence");
+
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].as_str(), Some("DOMAIN-SUFFIX,example.com,🚀 Proxy"));
+        assert_eq!(rules[1].as_i64(), Some(123));
+    }
+
+    #[test]
+    fn deduplicate_rules_noop_when_rules_missing() {
+        let config: serde_yaml_ng::Mapping = serde_yaml_ng::Mapping::new();
+        let result = deduplicate_rules(config);
+        assert!(result.get("rules").is_none());
     }
 }
