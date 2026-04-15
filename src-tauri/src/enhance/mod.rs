@@ -834,14 +834,14 @@ proxy-groups:
 
     #[test]
     fn deduplicate_string_rules_keeps_order_and_first_occurrence() {
-        let config_str = r#"
+        let config_str = r"
 rules:
   - DOMAIN-SUFFIX,example.com,🚀 Proxy
   - DOMAIN-SUFFIX,duplicate.com,🚀 Proxy
   - DOMAIN-SUFFIX,example.com,🚀 Proxy
   - IP-CIDR,192.168.0.0/16,🚀 Proxy,no-resolve
   - DOMAIN-SUFFIX,duplicate.com,🚀 Proxy
-"#;
+";
 
         let mut config: serde_yaml_ng::Mapping =
             serde_yaml_ng::from_str(config_str).expect("Failed to parse test yaml");
@@ -861,12 +861,12 @@ rules:
 
     #[test]
     fn deduplicate_rules_preserves_non_string_rules() {
-        let config_str = r#"
+        let config_str = r"
 rules:
   - DOMAIN-SUFFIX,example.com,🚀 Proxy
   - 123
   - DOMAIN-SUFFIX,example.com,🚀 Proxy
-"#;
+";
 
         let mut config: serde_yaml_ng::Mapping =
             serde_yaml_ng::from_str(config_str).expect("Failed to parse test yaml");
