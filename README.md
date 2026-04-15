@@ -33,7 +33,7 @@ A Clash Meta GUI based on <a href="https://github.com/tauri-apps/tauri">Tauri</a
 
 请到发布页面下载对应的安装包：[Release page](https://github.com/aiyouwolegequ/clash-verge-macos/releases)<br>
 Go to the [Release page](https://github.com/aiyouwolegequ/clash-verge-macos/releases) to download the corresponding installation package<br>
-Supports Windows (x64/x86), Linux (x64/arm64) and macOS 10.15+ (intel/apple).
+仅支持 macOS 10.15+ Apple Silicon (aarch64) 平台。
 
 #### 我应当怎样选择发行版
 

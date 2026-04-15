@@ -8,7 +8,7 @@
 
 - **Enhance 管道内置规则去重**：新增 `deduplicate_rules`，在配置生成阶段自动删除重复的字符串规则，保留首次出现的顺序
 - **Script 增强异步化与超时保护**：将 `use_script` 改为异步执行（`spawn_blocking` + 5 秒超时），防止 JS Script 死循环阻塞 Enhance 管道
-- 补齐 macOS `x86_64-apple-darwin` 缺失的 Mihomo sidecar 内核
+- 清理非 aarch64 平台文件：移除 x86_64-apple-darwin sidecar、Windows/Linux 资源及配置，仅保留 Apple Silicon (aarch64) 支持
 
 ### 🚀 优化改进
 

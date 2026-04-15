@@ -28,7 +28,7 @@
 
 ## نصب
 
-برای دانلود فایل نصبی متناسب با پلتفرم خود، به [صفحه انتشار](https://github.com/aiyouwolegequ/clash-verge-macos/releases) مراجعه کنید.<br> ما بسته‌هایی برای ویندوز (x64/x86)، لینوکس (x64/arm64) و macOS 10.15+ (اینتل/اپل) ارائه می‌دهیم.
+برای دانلود فایل نصبی متناسب با پلتفرم خود، به [صفحه انتشار](https://github.com/aiyouwolegequ/clash-verge-macos/releases) مراجعه کنید.<br> ما بسته‌هایی فقط برای macOS 10.15+ Apple Silicon (aarch64) ارائه می‌دهیم.
 
 #### انتخاب کانال انتشار
 

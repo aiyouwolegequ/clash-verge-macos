@@ -33,9 +33,7 @@ Clash Verge Rev (v2.6.2) 是一款基于 Tauri 2 的 Clash Meta 图形界面工�
 - pnpm 10.29.2+（通过 corepack 管理）
 
 **平台特定要求：**
-- **Ubuntu**：`sudo apt-get install -y libxslt1.1 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf`
-- **Windows**：使用 MSVC 工具链：`rustup target add x86_64-pc-windows-msvc && rustup set default-host x86_64-pc-windows-msvc`
-- **Windows ARM**：需要安装包含 clang 的 LLVM
+- 本项目仅支持 macOS Apple Silicon (aarch64) 平台
 
 ```bash
 # 启用 pnpm
@@ -75,9 +73,6 @@ pnpm build
 
 # 快速构建用于测试（fast-release 配置：无 LTO，opt-level=0，保留调试符号）
 pnpm build:fast
-
-# 创建便携版本（仅 Windows）
-pnpm portable
 ```
 
 **Cargo 配置：**
@@ -205,9 +200,8 @@ pnpm i18n:types
 ### 服务架构
 
 - **Mihomo Sidecar**：Rust 后端将 Mihomo 核心作为 sidecar 进程启动（`verge-mihomo` 和 `verge-mihomo-alpha` 二进制文件，通过 `src-tauri/tauri.conf.json` 的 `externalBin` 配置）
-- **Mihomo 通信**：通过 `tauri-plugin-mihomo` 自定义插件与 Mihomo 核心通信，使用 Unix Domain Socket / Windows Named Pipe（本地套接字协议）
+- **Mihomo 通信**：通过 `tauri-plugin-mihomo` 自定义插件与 Mihomo 核心通信，使用 Unix Domain Socket（本地套接字协议）
 - **系统代理**：通过 `sysproxy` crate 管理系统代理和守护进程
-- **服务安装器**：Windows 上通过 `clash_verge_service_ipc` 与服务进程通信
 
 ### 国际化系统
 
@@ -294,7 +288,7 @@ pnpm release:deploytest       # 触发部署测试发布
 - 更新 macOS sidecar 内核至最新版本：
   - 稳定版：`v1.19.23`
   - Alpha版：`alpha-6c407f0`
-- 补齐缺失的 `x86_64-apple-darwin` 内核二进制（`verge-mihomo-x86_64-apple-darwin`、`verge-mihomo-alpha-x86_64-apple-darwin`）。
+- 移除 `x86_64-apple-darwin` 内核二进制及所有非 macOS 平台文件，仅保留 Apple Silicon (aarch64) 支持。
 
 **测试验证**
 - 新增 3 个单元测试验证 `deduplicate_rules` 的去重行为：

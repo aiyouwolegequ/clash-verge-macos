@@ -29,7 +29,7 @@ Una interfaz gráfica para Clash Meta construida con <a href="https://github.com
 ## Instalación
 
 Visita la [página de lanzamientos](https://github.com/aiyouwolegequ/clash-verge-macos/releases) y descarga el instalador que corresponda a tu plataforma.<br>
-Ofrecemos paquetes para Windows (x64/x86), Linux (x64/arm64) y macOS 10.15+ (Intel/Apple).
+Ofrecemos paquetes solo para macOS 10.15+ Apple Silicon (aarch64).
 
 #### Cómo elegir el canal de lanzamiento
 

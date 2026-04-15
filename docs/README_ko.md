@@ -29,7 +29,7 @@
 ## 설치
 
 [릴리스 페이지](https://github.com/aiyouwolegequ/clash-verge-macos/releases)에서 사용 중인 플랫폼에 맞는 설치 프로그램을 다운로드하세요.<br>
-Windows (x64/x86), Linux (x64/arm64), macOS 10.15+ (Intel/Apple)을 지원합니다.
+macOS 10.15+ Apple Silicon (aarch64)만 지원합니다.
 
 #### 릴리스 채널 선택
 

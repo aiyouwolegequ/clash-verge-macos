@@ -8,7 +8,7 @@
 
 - Enhance 管道内置规则去重，保留首次出现顺序
 - Script 增强异步化与 5 秒超时保护，防止死循环阻塞管道
-- 补齐 macOS x86_64-apple-darwin 缺失的 Mihomo sidecar 内核
+- 清理非 aarch64 平台文件：移除 x86_64-apple-darwin sidecar、Windows/Linux 资源及配置，仅保留 Apple Silicon (aarch64) 支持
 
 ### 🚀 优化改进
 

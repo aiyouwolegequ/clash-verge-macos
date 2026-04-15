@@ -29,7 +29,7 @@ Clash Meta GUI базируется на <a href="https://github.com/tauri-apps/
 
 Пожалуйста, перейдите на страницу релизов, чтобы скачать соответствующий установочный пакет: [Страница релизов](https://github.com/aiyouwolegequ/clash-verge-macos/releases)<br>
 Перейти на [Страницу релизов](https://github.com/aiyouwolegequ/clash-verge-macos/releases) to download the corresponding installation package<br>
-Поддержка Windows (x64/x86), Linux (x64/arm64) и macOS 10.15+ (intel/apple).
+Поддержка только macOS 10.15+ Apple Silicon (aarch64).
 
 #### Как выбрать дистрибутив?
 
