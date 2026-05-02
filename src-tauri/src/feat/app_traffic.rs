@@ -133,7 +133,10 @@ pub fn init_app_traffic_daemon() {
                         "直连".to_string()
                     } else if is_reject {
                         "拦截".to_string()
-                    } else if format!("{:?}", conn.metadata.connection_type).to_uppercase().contains("TUN") {
+                    } else if format!("{:?}", conn.metadata.connection_type)
+                        .to_uppercase()
+                        .contains("TUN")
+                    {
                         "TUN".to_string()
                     } else {
                         "代理".to_string()
