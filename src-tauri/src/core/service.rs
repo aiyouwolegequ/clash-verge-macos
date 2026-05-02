@@ -19,6 +19,7 @@ use std::{
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ServiceStatus {
     Ready,
     NeedsReinstall,
@@ -421,6 +422,7 @@ pub(super) async fn stop_core_by_service() -> Result<()> {
 }
 
 /// 检查服务是否正在运行
+#[allow(clippy::unused_async)]
 pub async fn is_service_available() -> Result<()> {
     #[cfg(target_os = "macos")]
     return Ok(());
@@ -524,7 +526,7 @@ impl ServiceManager {
         {
             // macOS always uses sidecar mode; service is Windows-only.
             let _ = clash_verge_service_ipc::is_reinstall_service_needed().await;
-            return ServiceStatus::Unavailable("Service mode is not supported on macOS".into());
+            ServiceStatus::Unavailable("Service mode is not supported on macOS".into())
         }
         #[cfg(not(target_os = "macos"))]
         if clash_verge_service_ipc::is_reinstall_service_needed().await {
