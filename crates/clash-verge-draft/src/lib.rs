@@ -67,25 +67,18 @@ impl<T: Clone> Draft<T> {
 
     /// 异步地以拥有 Box<T> 的方式修改已提交数据：将克隆一次已提交数据到本地，
     /// 异步闭包返回新的 Box<T>（替换已提交数据）和业务返回值 R。
-    #[inline]
     pub async fn with_data_modify<F, Fut, R>(&self, f: F) -> Result<R, anyhow::Error>
     where
         T: Send + Sync + 'static,
         F: FnOnce(T) -> Fut + Send,
         Fut: std::future::Future<Output = Result<(T, R), anyhow::Error>> + Send,
     {
-        let (local, original_arc) = {
+        let local = {
             let guard = self.inner.read();
-            let arc = Arc::clone(&guard.0);
-            ((*arc).clone(), arc)
+            (*guard.0).clone()
         };
         let (new_local, res) = f(local).await?;
         let mut guard = self.inner.write();
-        if !Arc::ptr_eq(&guard.0, &original_arc) {
-            return Err(anyhow::anyhow!(
-                "Optimistic lock failed: Committed data has changed during async operation"
-            ));
-        }
         guard.0 = Arc::from(new_local);
         Ok(res)
     }
