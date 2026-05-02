@@ -47,7 +47,11 @@ impl MacExcludeAppsManager {
 
     fn start_scheduler(&self) {
         let now = Local::now();
-        let hours_until_noon = if now.hour() < 12 { 12 - now.hour() } else { 36 - now.hour() };
+        let hours_until_noon = if now.hour() < 12 {
+            12 - now.hour()
+        } else {
+            36 - now.hour()
+        };
         let minutes_until_noon = 60 - now.minute();
         let seconds_until_noon =
             (hours_until_noon as u64 * 3600 + minutes_until_noon as u64 * 60) - now.second() as u64;
@@ -115,12 +119,7 @@ impl MacExcludeAppsManager {
             if let Ok(entries) = std::fs::read_dir(&macos_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file()
-                        || path
-                            .symlink_metadata()
-                            .ok()
-                            .is_some_and(|m| m.file_type().is_symlink())
-                    {
+                    if path.is_file() || path.symlink_metadata().ok().is_some_and(|m| m.file_type().is_symlink()) {
                         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                             let name_sm = SmartString::from(name);
                             if !all_executables.contains(&name_sm) {

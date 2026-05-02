@@ -21,6 +21,29 @@ export async function refreshMacExcludeApps() {
   return invoke<void>('refresh_mac_exclude_apps')
 }
 
+export async function getAppTrafficStats(period: 'day' | 'week' | 'month') {
+  return invoke<
+    {
+      process_name: string
+      process_path: string
+      traffic_mode: string
+      upload_bytes: number
+      download_bytes: number
+    }[]
+  >('get_app_traffic_stats', { period })
+}
+
+export async function getGlobalTrafficStats(period: 'day' | 'week' | 'month') {
+  return invoke<{ upload_bytes: number; download_bytes: number } | null>(
+    'get_global_traffic_stats',
+    { period },
+  )
+}
+
+export async function clearAppTrafficStats() {
+  return invoke<void>('clear_app_traffic_stats')
+}
+
 export async function enhanceProfiles() {
   return (
     (await invoke<ValidationOutcome>('enhance_profiles')).status === 'valid'

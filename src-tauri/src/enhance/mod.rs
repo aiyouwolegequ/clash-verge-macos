@@ -682,10 +682,7 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
                 .unwrap_or_default();
 
             for app_path in apps.iter().rev() {
-                rules.insert(
-                    0,
-                    Value::String(format!("MAC-ALWAYS-ALLOW,{},DIRECT", app_path)),
-                );
+                rules.insert(0, Value::String(format!("MAC-ALWAYS-ALLOW,{},DIRECT", app_path)));
             }
             config.insert("rules".into(), Value::Sequence(rules));
         }
@@ -711,10 +708,7 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
                 .unwrap_or_default();
             tun.insert("auto-redirect".into(), Value::Bool(false));
             tun.insert("auto-route".into(), Value::Bool(true));
-            tun.insert(
-                "exclude-allowed-processes".into(),
-                Value::Sequence(exclude_processes),
-            );
+            tun.insert("exclude-allowed-processes".into(), Value::Sequence(exclude_processes));
             config.insert("tun".into(), Value::Mapping(tun));
         }
     }
