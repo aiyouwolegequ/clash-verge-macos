@@ -670,8 +670,10 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 
     config = deduplicate_rules(config);
 
+    config = use_tun(config, enable_tun);
+
     #[cfg(target_os = "macos")]
-    {
+    if enable_tun {
         let exclude_processes = Config::verge()
             .await
             .latest_arc()
@@ -682,20 +684,15 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
             .map(|s| Value::String(s.to_string()))
             .collect::<Vec<_>>();
 
+        #[allow(clippy::collapsible_if)]
         if !exclude_processes.is_empty() {
-            let mut tun = config
-                .get("tun")
-                .and_then(|v| v.as_mapping())
-                .cloned()
-                .unwrap_or_default();
-            tun.insert("auto-redirect".into(), Value::Bool(false));
-            tun.insert("auto-route".into(), Value::Bool(true));
-            tun.insert("exclude-allowed-processes".into(), Value::Sequence(exclude_processes));
-            config.insert("tun".into(), Value::Mapping(tun));
+            if let Some(tun) = config.get_mut("tun").and_then(|v| v.as_mapping_mut()) {
+                tun.insert("auto-redirect".into(), Value::Bool(false));
+                tun.insert("auto-route".into(), Value::Bool(true));
+                tun.insert("exclude-allowed-processes".into(), Value::Sequence(exclude_processes));
+            }
         }
     }
-
-    config = use_tun(config, enable_tun);
     config = use_sort(config);
 
     // dns settings
