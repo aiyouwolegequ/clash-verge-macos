@@ -672,24 +672,6 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 
     #[cfg(target_os = "macos")]
     {
-        if let Some(apps) = Config::verge().await.latest_arc().mac_exclude_apps.as_ref()
-            && !apps.is_empty()
-        {
-            let mut rules = config
-                .get("rules")
-                .and_then(|v| v.as_sequence())
-                .cloned()
-                .unwrap_or_default();
-
-            for app_path in apps.iter().rev() {
-                rules.insert(0, Value::String(format!("MAC-ALWAYS-ALLOW,{},DIRECT", app_path)));
-            }
-            config.insert("rules".into(), Value::Sequence(rules));
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
         let exclude_processes = Config::verge()
             .await
             .latest_arc()
