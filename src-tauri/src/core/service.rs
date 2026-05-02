@@ -566,7 +566,7 @@ impl ServiceManager {
             ServiceStatus::Unavailable(reason) => {
                 logging!(info, Type::Service, "服务不可用: {}，将使用Sidecar模式", reason);
                 self.0 = ServiceStatus::Unavailable(reason.clone());
-                return Err(anyhow::anyhow!("服务不可用: {}", reason));
+                return Ok(());
             }
         }
 
