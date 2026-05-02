@@ -142,7 +142,10 @@ pub async fn get_macos_apps() -> CmdResult<Vec<MacAppInfo>> {
 /// Refresh macOS exclude apps executables
 #[tauri::command]
 pub async fn refresh_mac_exclude_apps() -> CmdResult<()> {
-    MacExcludeAppsManager::global().refresh_executables().await.stringify_err()
+    MacExcludeAppsManager::global()
+        .refresh_executables()
+        .await
+        .stringify_err()
 }
 
 /// 获取当前自启动状态

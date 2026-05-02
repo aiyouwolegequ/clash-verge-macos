@@ -15,9 +15,7 @@ use crate::{
     },
     feat,
     module::{
-        auto_backup::AutoBackupManager,
-        lightweight::auto_lightweight_boot,
-        mac_exclude_apps::MacExcludeAppsManager,
+        auto_backup::AutoBackupManager, lightweight::auto_lightweight_boot, mac_exclude_apps::MacExcludeAppsManager,
     },
     process::AsyncHandler,
     utils::{init, server, window_manager::WindowManager},
@@ -77,6 +75,7 @@ pub fn resolve_setup_async() {
             init_silent_updater(),
         );
 
+        feat::init_app_traffic_daemon();
         Handle::refresh_clash();
         refresh_tray_menu().await;
         resolve_done();
@@ -141,8 +140,7 @@ pub(super) async fn init_mac_exclude_apps() {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(super) async fn init_mac_exclude_apps() {
-}
+pub(super) async fn init_mac_exclude_apps() {}
 
 async fn init_silent_updater() {
     use crate::core::SilentUpdater;
