@@ -24,21 +24,8 @@ impl MacExcludeAppsManager {
     }
 
     pub async fn init(&self) -> Result<()> {
-        let apps = Config::verge()
-            .await
-            .latest_arc()
-            .mac_exclude_apps
-            .clone()
-            .unwrap_or_default();
-
-        if apps.is_empty() {
-            logging!(
-                debug,
-                Type::Core,
-                "No mac exclude apps configured, skipping refresh timer"
-            );
-            return Ok(());
-        }
+        // Immediate refresh on startup so TUN exclude-allow is available
+        let _ = self.refresh_executables().await;
 
         self.enabled.store(true, Ordering::SeqCst);
         self.start_scheduler();

@@ -50,7 +50,10 @@ pub fn init_app_traffic_daemon() {
 
             let connections = {
                 let mihomo = handle::Handle::mihomo().await;
-                match mihomo.get_connections().await {
+                let result = mihomo.get_connections().await;
+                // Drop the mihomo lock before processing to avoid blocking other operations
+                drop(mihomo);
+                match result {
                     Ok(c) => c,
                     Err(e) => {
                         consecutive_failures += 1;
@@ -130,7 +133,7 @@ pub fn init_app_traffic_daemon() {
                         "直连".to_string()
                     } else if is_reject {
                         "拦截".to_string()
-                    } else if format!("{:?}", conn.metadata.connection_type).eq_ignore_ascii_case("tun") {
+                    } else if format!("{:?}", conn.metadata.connection_type).to_uppercase().contains("TUN") {
                         "TUN".to_string()
                     } else {
                         "代理".to_string()
@@ -188,7 +191,10 @@ async fn setup_db() -> anyhow::Result<()> {
         [],
     )?;
 
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON app_traffic (timestamp)", [])?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_timestamp ON app_traffic (timestamp)",
+        [],
+    )?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS global_traffic (
@@ -200,7 +206,10 @@ async fn setup_db() -> anyhow::Result<()> {
         [],
     )?;
 
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_global_timestamp ON global_traffic (timestamp)", [])?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_global_timestamp ON global_traffic (timestamp)",
+        [],
+    )?;
 
     let mut db_guard = DB_CONN.lock().await;
     *db_guard = Some(conn);
@@ -218,7 +227,13 @@ async fn insert_traffic_deltas(deltas: &[(String, String, String, u64, u64)]) ->
                  VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
             for (process_name, traffic_mode, process_path, up, down) in deltas {
-                stmt.execute(params![process_name, traffic_mode, process_path, *up as i64, *down as i64])?;
+                stmt.execute(params![
+                    process_name,
+                    traffic_mode,
+                    process_path,
+                    *up as i64,
+                    *down as i64
+                ])?;
             }
         }
         tx.commit()?;
