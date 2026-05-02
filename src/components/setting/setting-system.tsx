@@ -1,3 +1,5 @@
+import SettingsRounded from '@mui/icons-material/SettingsRounded'
+import { IconButton } from '@mui/material'
 import React, { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -43,18 +45,17 @@ const SettingSystem = ({ onError }: Props) => {
       <TunViewer ref={tunRef} />
       <MacAppExcludeViewer ref={macExcludeRef} />
 
-      <SettingItem label="macOS 直连应用">
-        <GuardState
-          value={false}
-          valueProps="checked"
-          onCatch={onError}
-          onFormat={onSwitchFormat}
-          onChange={() => macExcludeRef.current?.open()}
-          onGuard={async () => macExcludeRef.current?.open()}
-        >
-          <Switch edge="end" />
-        </GuardState>
-      </SettingItem>
+      <SettingItem
+        label="macOS 直连应用"
+        extra={
+          <IconButton
+            size="small"
+            onClick={() => macExcludeRef.current?.open()}
+          >
+            <SettingsRounded fontSize="small" />
+          </IconButton>
+        }
+      />
 
       <ProxyControlSwitches
         label={t('settings.sections.system.toggles.tunMode')}
