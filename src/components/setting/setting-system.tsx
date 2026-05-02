@@ -6,6 +6,10 @@ import ProxyControlSwitches from '@/components/shared/proxy-control-switches'
 import { useVerge } from '@/hooks/use-verge'
 
 import { GuardState } from './mods/guard-state'
+import {
+  MacAppExcludeViewer,
+  type MacAppExcludeViewerRef,
+} from './mods/mac-app-exclude-viewer'
 import { SettingList, SettingItem } from './mods/setting-comp'
 import { SysproxyViewer } from './mods/sysproxy-viewer'
 import { TunViewer } from './mods/tun-viewer'
@@ -23,6 +27,7 @@ const SettingSystem = ({ onError }: Props) => {
 
   const sysproxyRef = useRef<DialogRef>(null)
   const tunRef = useRef<DialogRef>(null)
+  const macExcludeRef = useRef<MacAppExcludeViewerRef>(null)
 
   const onSwitchFormat = (
     _e: React.ChangeEvent<HTMLInputElement>,
@@ -36,6 +41,20 @@ const SettingSystem = ({ onError }: Props) => {
     <SettingList title={t('settings.sections.system.title')}>
       <SysproxyViewer ref={sysproxyRef} />
       <TunViewer ref={tunRef} />
+      <MacAppExcludeViewer ref={macExcludeRef} />
+
+      <SettingItem label="macOS 直连应用">
+        <GuardState
+          value={false}
+          valueProps="checked"
+          onCatch={onError}
+          onFormat={onSwitchFormat}
+          onChange={() => macExcludeRef.current?.open()}
+          onGuard={async () => macExcludeRef.current?.open()}
+        >
+          <Switch edge="end" />
+        </GuardState>
+      </SettingItem>
 
       <ProxyControlSwitches
         label={t('settings.sections.system.toggles.tunMode')}

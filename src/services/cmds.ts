@@ -13,6 +13,14 @@ export async function getProfiles() {
   return invoke<IProfilesConfig>('get_profiles')
 }
 
+export async function getMacosApps() {
+  return invoke<{ name: string; path: string }[]>('get_macos_apps')
+}
+
+export async function refreshMacExcludeApps() {
+  return invoke<void>('refresh_mac_exclude_apps')
+}
+
 export async function enhanceProfiles() {
   return (
     (await invoke<ValidationOutcome>('enhance_profiles')).status === 'valid'

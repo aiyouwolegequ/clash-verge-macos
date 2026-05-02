@@ -984,6 +984,9 @@ interface IVergeConfig {
   enable_hover_jump_navigator?: boolean
   hover_jump_navigator_delay?: number
   enable_external_controller?: boolean
+
+  // macOS direct connect apps
+  mac_exclude_apps?: string[]
 }
 
 interface IWebDavFile {

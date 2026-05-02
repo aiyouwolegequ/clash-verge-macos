@@ -76,6 +76,16 @@ pub struct IVerge {
     /// collapse navigation bar
     pub collapse_navbar: Option<bool>,
 
+    /// mac exclude apps list (macOS direct connect)
+    #[cfg(target_os = "macos")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_exclude_apps: Option<Vec<String>>,
+
+    /// precomputed mac exclude app executables
+    #[cfg(target_os = "macos")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_exclude_app_executables: Option<Vec<String>>,
+
     /// sysproxy tray icon
     pub sysproxy_tray_icon: Option<bool>,
 
@@ -405,6 +415,10 @@ impl IVerge {
             tun_tray_icon: Some(false),
             enable_auto_launch: Some(false),
             enable_silent_start: Some(false),
+            #[cfg(target_os = "macos")]
+            mac_exclude_apps: Some(vec![]),
+            #[cfg(target_os = "macos")]
+            mac_exclude_app_executables: Some(vec![]),
             enable_hover_jump_navigator: Some(true),
             hover_jump_navigator_delay: Some(280),
             enable_system_proxy: Some(false),
@@ -497,6 +511,8 @@ impl IVerge {
         patch!(enable_tun_mode);
         patch!(enable_auto_launch);
         patch!(enable_silent_start);
+        #[cfg(target_os = "macos")]
+        patch!(mac_exclude_apps);
         patch!(enable_hover_jump_navigator);
         patch!(hover_jump_navigator_delay);
         #[cfg(not(target_os = "windows"))]

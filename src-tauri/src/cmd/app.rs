@@ -1,5 +1,6 @@
 use super::CmdResult;
 use crate::core::autostart;
+use crate::module::mac_exclude_apps::MacExcludeAppsManager;
 use crate::{cmd::StringifyErr as _, feat, utils::dirs};
 use smartstring::alias::String;
 use tauri::{AppHandle, Manager as _};
@@ -88,6 +89,60 @@ pub fn get_portable_flag() -> bool {
 pub fn get_app_dir() -> CmdResult<String> {
     let app_home_dir = dirs::app_home_dir().stringify_err()?.to_string_lossy().into();
     Ok(app_home_dir)
+}
+
+#[derive(serde::Serialize)]
+pub struct MacAppInfo {
+    pub name: String,
+    pub path: String,
+}
+
+#[tauri::command]
+pub async fn get_macos_apps() -> CmdResult<Vec<MacAppInfo>> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut apps = Vec::new();
+        if let Ok(entries) = std::fs::read_dir("/Applications") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("app")
+                    && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    apps.push(MacAppInfo {
+                        name: name.to_string().into(),
+                        path: path.to_string_lossy().to_string().into(),
+                    });
+                }
+            }
+        }
+        if let Ok(home) = std::env::var("HOME")
+            && let Ok(entries) = std::fs::read_dir(format!("{}/Applications", home))
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("app")
+                    && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    apps.push(MacAppInfo {
+                        name: name.to_string().into(),
+                        path: path.to_string_lossy().to_string().into(),
+                    });
+                }
+            }
+        }
+        apps.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(apps)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(vec![])
+    }
+}
+
+/// Refresh macOS exclude apps executables
+#[tauri::command]
+pub async fn refresh_mac_exclude_apps() -> CmdResult<()> {
+    MacExcludeAppsManager::global().refresh_executables().await.stringify_err()
 }
 
 /// 获取当前自启动状态
