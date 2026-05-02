@@ -670,6 +670,55 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 
     config = deduplicate_rules(config);
 
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(apps) = Config::verge().await.latest_arc().mac_exclude_apps.as_ref()
+            && !apps.is_empty()
+        {
+            let mut rules = config
+                .get("rules")
+                .and_then(|v| v.as_sequence())
+                .cloned()
+                .unwrap_or_default();
+
+            for app_path in apps.iter().rev() {
+                rules.insert(
+                    0,
+                    Value::String(format!("MAC-ALWAYS-ALLOW,{},DIRECT", app_path)),
+                );
+            }
+            config.insert("rules".into(), Value::Sequence(rules));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let exclude_processes = Config::verge()
+            .await
+            .latest_arc()
+            .mac_exclude_app_executables
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| Value::String(s.to_string()))
+            .collect::<Vec<_>>();
+
+        if !exclude_processes.is_empty() {
+            let mut tun = config
+                .get("tun")
+                .and_then(|v| v.as_mapping())
+                .cloned()
+                .unwrap_or_default();
+            tun.insert("auto-redirect".into(), Value::Bool(false));
+            tun.insert("auto-route".into(), Value::Bool(true));
+            tun.insert(
+                "exclude-allowed-processes".into(),
+                Value::Sequence(exclude_processes),
+            );
+            config.insert("tun".into(), Value::Mapping(tun));
+        }
+    }
+
     config = use_tun(config, enable_tun);
     config = use_sort(config);
 

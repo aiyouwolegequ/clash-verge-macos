@@ -187,6 +187,8 @@ mod app_init {
             cmd::open_devtools,
             cmd::exit_app,
             cmd::get_network_interfaces_info,
+            cmd::get_macos_apps,
+            cmd::refresh_mac_exclude_apps,
             cmd::get_profiles,
             cmd::enhance_profiles,
             cmd::patch_profiles_config,
