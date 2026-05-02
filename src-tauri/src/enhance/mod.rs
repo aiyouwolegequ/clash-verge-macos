@@ -547,6 +547,30 @@ fn cleanup_proxy_groups(mut config: Mapping) -> Mapping {
     config
 }
 
+fn deduplicate_rules(mut config: Mapping) -> Mapping {
+    if let Some(Value::Sequence(rules)) = config.get("rules") {
+        let mut seen = HashSet::new();
+        let deduped: Vec<Value> = rules
+            .iter()
+            .filter(|rule| {
+                if let Value::String(s) = rule {
+                    if seen.contains(s) {
+                        false
+                    } else {
+                        seen.insert(s.clone());
+                        true
+                    }
+                } else {
+                    true
+                }
+            })
+            .cloned()
+            .collect();
+        config.insert("rules".into(), Value::Sequence(deduped));
+    }
+    config
+}
+
 async fn apply_dns_settings(mut config: Mapping, enable_dns_settings: bool) -> Mapping {
     if enable_dns_settings && let Ok(app_dir) = dirs::app_home_dir() {
         let dns_path = app_dir.join(constants::files::DNS_CONFIG);
@@ -644,6 +668,8 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 
     config = cleanup_proxy_groups(config);
 
+    config = deduplicate_rules(config);
+
     config = use_tun(config, enable_tun);
     config = use_sort(config);
 
@@ -659,7 +685,7 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 #[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
-    use super::cleanup_proxy_groups;
+    use super::{cleanup_proxy_groups, deduplicate_rules};
 
     #[test]
     fn remove_missing_proxies_from_groups() {
@@ -814,5 +840,63 @@ proxy-groups:
             .expect("proxies should be a sequence");
         assert_eq!(proxies.len(), 1);
         assert_eq!(proxies[0].as_str(), Some("DIRECT"));
+    }
+
+    #[test]
+    fn deduplicate_string_rules_keeps_order_and_first_occurrence() {
+        let config_str = r"
+rules:
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+  - DOMAIN-SUFFIX,duplicate.com,🚀 Proxy
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+  - IP-CIDR,192.168.0.0/16,🚀 Proxy,no-resolve
+  - DOMAIN-SUFFIX,duplicate.com,🚀 Proxy
+";
+
+        let mut config: serde_yaml_ng::Mapping =
+            serde_yaml_ng::from_str(config_str).expect("Failed to parse test yaml");
+        config = deduplicate_rules(config);
+
+        let rules = config
+            .get("rules")
+            .and_then(|v| v.as_sequence())
+            .cloned()
+            .expect("rules should be a sequence");
+
+        assert_eq!(rules.len(), 3);
+        assert_eq!(rules[0].as_str(), Some("DOMAIN-SUFFIX,example.com,🚀 Proxy"));
+        assert_eq!(rules[1].as_str(), Some("DOMAIN-SUFFIX,duplicate.com,🚀 Proxy"));
+        assert_eq!(rules[2].as_str(), Some("IP-CIDR,192.168.0.0/16,🚀 Proxy,no-resolve"));
+    }
+
+    #[test]
+    fn deduplicate_rules_preserves_non_string_rules() {
+        let config_str = r"
+rules:
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+  - 123
+  - DOMAIN-SUFFIX,example.com,🚀 Proxy
+";
+
+        let mut config: serde_yaml_ng::Mapping =
+            serde_yaml_ng::from_str(config_str).expect("Failed to parse test yaml");
+        config = deduplicate_rules(config);
+
+        let rules = config
+            .get("rules")
+            .and_then(|v| v.as_sequence())
+            .cloned()
+            .expect("rules should be a sequence");
+
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].as_str(), Some("DOMAIN-SUFFIX,example.com,🚀 Proxy"));
+        assert_eq!(rules[1].as_i64(), Some(123));
+    }
+
+    #[test]
+    fn deduplicate_rules_noop_when_rules_missing() {
+        let config: serde_yaml_ng::Mapping = serde_yaml_ng::Mapping::new();
+        let result = deduplicate_rules(config);
+        assert!(result.get("rules").is_none());
     }
 }
