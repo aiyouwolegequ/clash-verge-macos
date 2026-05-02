@@ -71,10 +71,10 @@ pub fn resolve_setup_async() {
             init_hotkey(),
             init_auto_lightweight_boot(),
             init_auto_backup(),
-            init_mac_exclude_apps(),
             init_silent_updater(),
         );
 
+        init_mac_exclude_apps();
         feat::init_app_traffic_daemon();
         Handle::refresh_clash();
         refresh_tray_menu().await;
@@ -135,12 +135,12 @@ pub(super) async fn init_auto_backup() {
 }
 
 #[cfg(target_os = "macos")]
-pub(super) async fn init_mac_exclude_apps() {
-    logging_error!(Type::Setup, MacExcludeAppsManager::global().init().await);
+pub(super) fn init_mac_exclude_apps() {
+    MacExcludeAppsManager::global().init();
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(super) async fn init_mac_exclude_apps() {}
+pub(super) fn init_mac_exclude_apps() {}
 
 async fn init_silent_updater() {
     use crate::core::SilentUpdater;

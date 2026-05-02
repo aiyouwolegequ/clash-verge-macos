@@ -2,7 +2,6 @@ use crate::config::Config;
 use crate::process::AsyncHandler;
 use anyhow::Result;
 use chrono::Local;
-use chrono::Timelike as _;
 use clash_verge_logging::{Type, logging};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
@@ -23,32 +22,23 @@ impl MacExcludeAppsManager {
         })
     }
 
-    pub async fn init(&self) -> Result<()> {
-        // Immediate refresh on startup so TUN exclude-allow is available
-        let _ = self.refresh_executables().await;
-
+    pub fn init(&self) {
         self.enabled.store(true, Ordering::SeqCst);
         self.start_scheduler();
-        Ok(())
     }
 
     fn start_scheduler(&self) {
-        let now = Local::now();
-        let hours_until_noon = if now.hour() < 12 {
-            12 - now.hour()
-        } else {
-            36 - now.hour()
-        };
-        let minutes_until_noon = 60 - now.minute();
-        let seconds_until_noon =
-            (hours_until_noon as u64 * 3600 + minutes_until_noon as u64 * 60) - now.second() as u64;
-        let initial_delay = std::time::Duration::from_secs(seconds_until_noon);
+        // First refresh runs after 30s startup delay to avoid racing with core init
+        const STARTUP_DELAY_SECS: u64 = 30;
+        const DAY_SECS: u64 = 24 * 60 * 60;
+
+        let initial_delay = std::time::Duration::from_secs(STARTUP_DELAY_SECS);
 
         logging!(
             info,
             Type::Core,
-            "Mac exclude apps refresh: next run in {} seconds (12:00)",
-            seconds_until_noon
+            "Mac exclude apps refresh: first run in {} seconds",
+            STARTUP_DELAY_SECS
         );
 
         let delay = initial_delay;
@@ -72,7 +62,7 @@ impl MacExcludeAppsManager {
                     logging!(info, Type::Core, "Mac exclude apps executables refreshed successfully");
                 }
 
-                tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(DAY_SECS)).await;
             }
         });
     }
