@@ -18,7 +18,6 @@ const executeWithErrorHandling = async (
     }
   } catch (err) {
     showNotice.error(err)
-    throw err
   }
 }
 
