@@ -3,6 +3,7 @@ use crate::cmd::StringifyErr as _;
 use crate::config::{Config, IVerge};
 use crate::core::handle::Handle;
 use crate::core::manager::CLASH_LOGGER;
+use crate::core::service;
 use crate::core::service::{SERVICE_MANAGER, ServiceStatus};
 use anyhow::Result;
 use clash_verge_logging::{Type, logging};
@@ -82,13 +83,26 @@ impl CoreManager {
             }
         }
 
-        let value = SERVICE_MANAGER.lock().await.current();
-        let mode = match value {
+        let mut manager = SERVICE_MANAGER.lock().await;
+
+        #[cfg(target_os = "macos")]
+        {
+            // TUN enabled but SERVICE_MANAGER may not have been refreshed yet.
+            if !matches!(manager.current(), ServiceStatus::Ready)
+                && service::is_service_ipc_path_exists()
+            {
+                let _ = manager.init().await;
+                let _ = manager.refresh().await;
+            }
+        }
+
+        let mode = match manager.current() {
             ServiceStatus::Ready => RunningMode::Service,
             _ => RunningMode::Sidecar,
         };
 
         self.set_running_mode(mode);
+        drop(manager);
         Ok(())
     }
 

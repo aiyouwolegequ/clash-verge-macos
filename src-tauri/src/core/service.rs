@@ -371,12 +371,10 @@ pub(super) async fn start_with_existing_service(config_file: &PathBuf) -> Result
         .with_max_times(5);
 
     let response = (|| async {
-        clash_verge_service_ipc::start_clash(&payload)
-            .await
-            .map_err(|e| {
-                logging!(warn, Type::Service, "start_clash attempt failed: {}", e);
-                e
-            })
+        clash_verge_service_ipc::start_clash(&payload).await.map_err(|e| {
+            logging!(warn, Type::Service, "start_clash attempt failed: {}", e);
+            e
+        })
     })
     .retry(backoff)
     .await
@@ -449,6 +447,7 @@ pub async fn wait_and_check_service_available(status: &mut ServiceManager) -> Re
     wait_for_service_ipc(status, "Waiting for service to be available").await
 }
 
+#[allow(dead_code)]
 async fn wait_and_check_service_version(status: &mut ServiceManager) -> Result<()> {
     wait_and_check_service_available(status).await?;
 
@@ -564,7 +563,7 @@ impl ServiceManager {
             ServiceStatus::InstallRequired => {
                 logging!(info, Type::Service, "需要安装服务，执行安装流程");
                 install_service()?;
-                wait_and_check_service_version(self).await?;
+                wait_and_check_service_available(self).await?;
             }
             ServiceStatus::UninstallRequired => {
                 logging!(info, Type::Service, "服务需要卸载，执行卸载流程");
