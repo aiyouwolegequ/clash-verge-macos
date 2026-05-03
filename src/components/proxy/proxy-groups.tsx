@@ -408,6 +408,77 @@ export const ProxyGroups = (props: Props) => {
     }),
   )
 
+  const handleChangeProxyRef = useRef(handleChangeProxy)
+  handleChangeProxyRef.current = handleChangeProxy
+
+  // 自动延迟测试与故障切换：每30秒测试一次，timeout 后自动切到同组延迟最低节点
+  useEffect(() => {
+    if (isChainMode || mode === 'direct') return
+
+    const isTimeout = (delay: number) =>
+      delay === 0 || delay >= timeout || delay > 1e5
+
+    const autoCheckAndSwitch = async () => {
+      if (!availableGroups?.length) return
+
+      for (const group of availableGroups) {
+        if (!['Selector', 'URLTest', 'Fallback'].includes(group.type)) continue
+        if (!group.all?.length) continue
+
+        const currentProxy = group.all.find(
+          (p: IProxyItem) => p.name === group.now,
+        )
+        if (!currentProxy) continue
+
+        const currentDelay = delayManager.getDelayFix(currentProxy, group.name)
+
+        // 没有数据或已超时，先触发测试
+        if (currentDelay < 0 || isTimeout(currentDelay)) {
+          try {
+            await handleCheckAll(group.name)
+          } catch (e) {
+            console.error(`[AutoCheck] 延迟测试失败: ${group.name}`, e)
+          }
+        }
+
+        // 测试后再判断，若仍超时则自动切换
+        const afterDelay = delayManager.getDelayFix(currentProxy, group.name)
+        if (isTimeout(afterDelay)) {
+          const candidates = group.all
+            .map((p: IProxyItem) => ({
+              proxy: p,
+              delay: delayManager.getDelayFix(p, group.name),
+            }))
+            .filter(
+              (c: { proxy: IProxyItem; delay: number }) =>
+                c.delay > 0 && c.delay < timeout && c.delay <= 1e5,
+            )
+            .sort(
+              (
+                a: { proxy: IProxyItem; delay: number },
+                b: { proxy: IProxyItem; delay: number },
+              ) => a.delay - b.delay,
+            )
+
+          if (candidates.length > 0 && candidates[0].proxy.name !== group.now) {
+            console.log(
+              `[AutoSwitch] ${group.name}: ${group.now} → ${candidates[0].proxy.name} (${candidates[0].delay}ms)`,
+            )
+            handleChangeProxyRef.current(group, candidates[0].proxy)
+          }
+        }
+      }
+    }
+
+    const initialTimer = setTimeout(autoCheckAndSwitch, 8000)
+    const interval = setInterval(autoCheckAndSwitch, 30000)
+
+    return () => {
+      clearTimeout(initialTimer)
+      clearInterval(interval)
+    }
+  }, [availableGroups, handleCheckAll, isChainMode, mode, timeout])
+
   // 滚到对应的节点
   const handleLocation = useStableCallback((group: IProxyGroupItem) => {
     if (!group) return
