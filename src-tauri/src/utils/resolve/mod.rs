@@ -187,7 +187,15 @@ pub(super) async fn init_verge_config() {
 
 pub(super) async fn init_service_manager() {
     clash_verge_service_ipc::set_config(Some(ServiceManager::config())).await;
+    let tun_enabled = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
     if !is_service_ipc_path_exists() {
+        if !tun_enabled {
+            return;
+        }
+        // TUN mode is enabled but service IPC not ready — trigger refresh to install/reinstall
+        let mut manager = SERVICE_MANAGER.lock().await;
+        logging_error!(Type::Setup, manager.refresh().await);
+        drop(manager);
         return;
     }
     let mut manager = SERVICE_MANAGER.lock().await;
