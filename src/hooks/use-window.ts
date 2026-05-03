@@ -1,9 +1,10 @@
-import { use } from 'react'
+import { useContext } from 'react'
 
 import { WindowContext, type WindowContextType } from '@/providers/window'
 
 export const useWindow = () => {
-  const context = use(WindowContext)
+  // eslint-disable-next-line @eslint-react/no-use-context
+  const context = useContext(WindowContext)
   if (context === undefined) {
     throw new Error('useWindow must be used within WindowProvider')
   }

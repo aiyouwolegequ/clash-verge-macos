@@ -1,4 +1,4 @@
-import { Context, createContext, use } from 'react'
+import { Context, createContext, useContext } from 'react'
 import {
   BaseConfig,
   ProxyProvider,
@@ -93,7 +93,8 @@ export const RefreshersContext = createContext<RefreshersContextType | null>(
 )
 
 const useCtx = <T>(ctx: Context<T | null>, hookName: string): T => {
-  const v = use(ctx)
+  // eslint-disable-next-line @eslint-react/no-use-context
+  const v = useContext(ctx)
   if (!v) throw new Error(`${hookName} must be used within AppDataProvider`)
   return v
 }

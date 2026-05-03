@@ -55,10 +55,7 @@ async fn resolve_process_by_port(port: &str) -> Option<(String, String)> {
             current_pid = stripped.to_string();
         } else if let Some(stripped) = line.strip_prefix('c') {
             current_cmd = stripped.to_string();
-        } else if line.starts_with('n')
-            && !current_pid.is_empty()
-            && !current_cmd.is_empty()
-        {
+        } else if line.starts_with('n') && !current_pid.is_empty() && !current_cmd.is_empty() {
             if let Ok(ps_output) = tokio::process::Command::new("ps")
                 .args(["-p", &current_pid, "-o", "args="])
                 .output()
