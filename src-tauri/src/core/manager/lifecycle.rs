@@ -105,8 +105,8 @@ impl CoreManager {
             let needs_tun = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
             if needs_tun && !matches!(manager.current(), ServiceStatus::Ready) {
                 logging!(info, Type::Core, "TUN 模式需要服务，等待服务 IPC 就绪...");
-                // 给 LaunchDaemon 最多 3 秒启动时间
-                let _ = service::wait_and_check_service_available(&mut manager).await;
+                // 给 LaunchDaemon 最多 12 秒启动时间（扩展等待）
+                let _ = service::wait_and_check_service_available_extended(&mut manager).await;
             }
         }
 

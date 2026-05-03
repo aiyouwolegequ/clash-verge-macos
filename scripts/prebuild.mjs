@@ -241,7 +241,7 @@ async function getLatestAlphaVersion() {
     await setCachedVersion('META_ALPHA_VERSION', META_ALPHA_VERSION)
   } catch (err) {
     log_error('Error fetching latest alpha version:', err.message)
-    process.exit(1)
+    throw err
   }
 }
 
@@ -273,7 +273,7 @@ async function getLatestReleaseVersion() {
     await setCachedVersion('META_VERSION', META_VERSION)
   } catch (err) {
     log_error('Error fetching latest release version:', err.message)
-    process.exit(1)
+    throw err
   }
 }
 
@@ -754,14 +754,30 @@ const resolveUnSetDnsScript = () =>
 const tasks = [
   {
     name: 'verge-mihomo-alpha',
-    func: () =>
-      getLatestAlphaVersion().then(() => resolveSidecar(clashMetaAlpha())),
+    func: async () => {
+      const info = clashMetaAlpha()
+      const sidecarPath = path.join(SIDECAR_DIR, info.targetFile)
+      if (!FORCE && fs.existsSync(sidecarPath)) {
+        log_success(`"${info.name}" already exists, skipping download`)
+        return
+      }
+      await getLatestAlphaVersion()
+      await resolveSidecar(info)
+    },
     retry: 5,
   },
   {
     name: 'verge-mihomo',
-    func: () =>
-      getLatestReleaseVersion().then(() => resolveSidecar(clashMeta())),
+    func: async () => {
+      const info = clashMeta()
+      const sidecarPath = path.join(SIDECAR_DIR, info.targetFile)
+      if (!FORCE && fs.existsSync(sidecarPath)) {
+        log_success(`"${info.name}" already exists, skipping download`)
+        return
+      }
+      await getLatestReleaseVersion()
+      await resolveSidecar(info)
+    },
     retry: 5,
   },
   { name: 'plugin', func: resolvePlugin, retry: 5, winOnly: true },

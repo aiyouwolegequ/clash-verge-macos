@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo, useRef } from 'react'
 import {
   closeConnection,
@@ -9,6 +10,8 @@ import { useProfiles } from '@/hooks/use-profiles'
 import { useVerge } from '@/hooks/use-verge'
 import { syncTrayProxySelection } from '@/services/cmds'
 import { debugLog } from '@/utils/debug'
+
+const IP_INFO_CACHE_KEY = 'cv_ip_info_cache'
 
 // 缓存连接清理
 const cleanupConnections = async (previousProxy: string) => {
@@ -44,6 +47,7 @@ interface ProxyChangeRequest {
 export const useProxySelection = (options: ProxySelectionOptions = {}) => {
   const { current, patchCurrent } = useProfiles()
   const { verge } = useVerge()
+  const queryClient = useQueryClient()
   const pendingRequestRef = useRef<ProxyChangeRequest | null>(null)
   const isProcessingRef = useRef(false)
 
@@ -99,6 +103,9 @@ export const useProxySelection = (options: ProxySelectionOptions = {}) => {
           `[ProxySelection] 代理和状态同步完成: ${groupName} -> ${proxyName}`,
         )
 
+        // 切换节点后使 IP 信息缓存失效，触发重新获取
+        queryClient.invalidateQueries({ queryKey: [IP_INFO_CACHE_KEY] })
+
         if (
           config.enableConnectionCleanup &&
           config.autoCloseConnection &&
@@ -120,6 +127,8 @@ export const useProxySelection = (options: ProxySelectionOptions = {}) => {
           debugLog(
             `[ProxySelection] 代理切换回退成功: ${groupName} -> ${proxyName}`,
           )
+          // 回退成功后也刷新 IP 信息
+          queryClient.invalidateQueries({ queryKey: [IP_INFO_CACHE_KEY] })
         } catch (fallbackError) {
           console.error(
             `[ProxySelection] 代理切换回退也失败: ${groupName} -> ${proxyName}`,
@@ -129,7 +138,14 @@ export const useProxySelection = (options: ProxySelectionOptions = {}) => {
         }
       }
     },
-    [config, onError, onSuccess, persistSelection, syncTraySelection],
+    [
+      config,
+      onError,
+      onSuccess,
+      persistSelection,
+      syncTraySelection,
+      queryClient,
+    ],
   )
 
   const flushChangeQueue = useCallback(async () => {

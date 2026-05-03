@@ -13,7 +13,6 @@ use std::{
     borrow::Cow,
     env::current_exe,
     path::{Path, PathBuf},
-    process::Command as StdCommand,
     time::Duration,
 };
 use tokio::sync::Mutex;
@@ -34,7 +33,7 @@ pub enum ServiceStatus {
 pub struct ServiceManager(ServiceStatus);
 
 #[cfg(target_os = "windows")]
-fn uninstall_service() -> Result<()> {
+async fn uninstall_service() -> Result<()> {
     logging!(info, Type::Service, "uninstall service");
 
     use deelevate::{PrivilegeLevel, Token};
@@ -66,7 +65,7 @@ fn uninstall_service() -> Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn install_service() -> Result<()> {
+async fn install_service() -> Result<()> {
     use std::process::Output;
     logging!(info, Type::Service, "install service");
 
@@ -113,7 +112,7 @@ fn install_service() -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn uninstall_service() -> Result<()> {
+async fn uninstall_service() -> Result<()> {
     logging!(info, Type::Service, "uninstall service");
 
     let uninstall_path = tauri::utils::platform::current_exe()?.with_file_name("clash-verge-service-uninstall");
@@ -169,7 +168,7 @@ fn uninstall_service() -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn install_service() -> Result<()> {
+async fn install_service() -> Result<()> {
     logging!(info, Type::Service, "install service");
 
     let install_path = tauri::utils::platform::current_exe()?.with_file_name("clash-verge-service-install");
@@ -231,7 +230,7 @@ fn linux_running_as_root() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn uninstall_service() -> Result<()> {
+async fn uninstall_service() -> Result<()> {
     logging!(info, Type::Service, "uninstall service");
 
     let binary_path = dirs::service_path()?;
@@ -247,7 +246,12 @@ fn uninstall_service() -> Result<()> {
     let command =
         format!(r#"do shell script "sudo '{uninstall_shell}'" with administrator privileges with prompt "{prompt}""#);
 
-    let status = StdCommand::new("osascript").args(vec!["-e", &command]).status()?;
+    let status = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        tokio::process::Command::new("osascript").args(vec!["-e", &command]).status(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("osascript 超时：请在系统设置 > 隐私与安全性 > 自动化中允许 Clash Verge 控制 System Events"))??;
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
@@ -261,7 +265,7 @@ fn uninstall_service() -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn install_service() -> Result<()> {
+async fn install_service() -> Result<()> {
     logging!(info, Type::Service, "install service");
 
     let binary_path = dirs::service_path()?;
@@ -279,7 +283,13 @@ fn install_service() -> Result<()> {
         r#"do shell script "sudo CLASH_VERGE_SERVICE_GID={gid} '{install_shell}'" with administrator privileges with prompt "{prompt}""#
     );
 
-    let output = StdCommand::new("osascript").args(vec!["-e", &command]).output()?;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        tokio::process::Command::new("osascript").args(vec!["-e", &command]).output(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("osascript 超时：请在系统设置 > 隐私与安全性 > 自动化中允许 Clash Verge 控制 System Events"))??;
+
     if let Some((code, err)) = check_output_error(&output) {
         if code == -128 {
             bail!("用户取消了授权");
@@ -320,16 +330,16 @@ fn check_output_error(output: &std::process::Output) -> Option<(i32, Cow<'_, str
     Some((code, Cow::Borrowed("Unknown error")))
 }
 
-fn reinstall_service() -> Result<()> {
+async fn reinstall_service() -> Result<()> {
     logging!(info, Type::Service, "reinstall service");
 
     // 先卸载服务
-    if let Err(err) = uninstall_service() {
+    if let Err(err) = uninstall_service().await {
         logging!(warn, Type::Service, "failed to uninstall service: {}", err);
     }
 
     // 再安装服务
-    match install_service() {
+    match install_service().await {
         Ok(_) => Ok(()),
         Err(err) => {
             bail!(format!("failed to install service: {err}"))
@@ -339,7 +349,7 @@ fn reinstall_service() -> Result<()> {
 
 /// 强制重装服务（UI修复按钮）
 /// 与普通 reinstall 不同：先清理残留 IPC socket 文件
-fn force_reinstall_service() -> Result<()> {
+async fn force_reinstall_service() -> Result<()> {
     logging!(info, Type::Service, "用户请求强制重装服务");
 
     // 清理可能残留的 IPC socket 文件
@@ -352,7 +362,7 @@ fn force_reinstall_service() -> Result<()> {
         }
     }
 
-    reinstall_service().map_err(|err| {
+    reinstall_service().await.map_err(|err| {
         logging!(error, Type::Service, "强制重装服务失败: {}", err);
         err
     })
@@ -489,6 +499,35 @@ pub async fn wait_and_check_service_available(status: &mut ServiceManager) -> Re
     wait_for_service_ipc(status, "Waiting for service to be available").await
 }
 
+/// 等待服务 IPC 就绪（扩展超时版本，用于 macOS TUN 启动）
+pub async fn wait_and_check_service_available_extended(status: &mut ServiceManager) -> Result<()> {
+    status.0 = ServiceStatus::Unavailable("Waiting for service to be available (extended)".into());
+
+    let backoff = ConstantBuilder::default()
+        .with_delay(Duration::from_millis(300))
+        .with_max_times(40); // 最多等待 12 秒，给 LaunchDaemon 足够启动时间
+
+    let result = (|| async {
+        if Path::new(clash_verge_service_ipc::IPC_PATH).exists() {
+            clash_verge_service_ipc::connect().await?;
+            Ok(())
+        } else {
+            Err(anyhow!("IPC path not ready"))
+        }
+    })
+    .retry(backoff)
+    .await;
+
+    if result.is_ok() {
+        status.0 = ServiceStatus::Ready;
+        logging!(info, Type::Service, "服务 IPC 连接就绪（扩展等待）");
+    } else {
+        logging!(warn, Type::Service, "等待服务 IPC 超时（扩展等待）");
+    }
+
+    result
+}
+
 async fn wait_for_service_ipc(status: &mut ServiceManager, reason: &str) -> Result<()> {
     status.0 = ServiceStatus::Unavailable(reason.into());
     let config = ServiceManager::config();
@@ -596,22 +635,22 @@ impl ServiceManager {
             }
             ServiceStatus::NeedsReinstall | ServiceStatus::ReinstallRequired => {
                 logging!(info, Type::Service, "服务需要重装，执行重装流程");
-                reinstall_service()?;
+                reinstall_service().await?;
                 wait_and_check_service_available(self).await?;
             }
             ServiceStatus::ForceReinstallRequired => {
                 logging!(info, Type::Service, "服务需要强制重装，执行强制重装流程");
-                force_reinstall_service()?;
+                force_reinstall_service().await?;
                 wait_and_check_service_available(self).await?;
             }
             ServiceStatus::InstallRequired => {
                 logging!(info, Type::Service, "需要安装服务，执行安装流程");
-                install_service()?;
+                install_service().await?;
                 wait_and_check_service_available(self).await?;
             }
             ServiceStatus::UninstallRequired => {
                 logging!(info, Type::Service, "服务需要卸载，执行卸载流程");
-                uninstall_service()?;
+                uninstall_service().await?;
                 self.0 = ServiceStatus::Unavailable("Service Uninstalled".into());
                 // 卸载后核心已停止，跳过 Tray 更新（会因核心不可用而失败）
                 return Ok(());

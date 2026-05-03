@@ -66,6 +66,20 @@ async function main() {
       await copyFile(src, dest)
     }
 
+    // Also copy to src-tauri/resources for dev mode consistency
+    const resourcesDir = resolve('src-tauri', 'resources')
+    for (const name of [
+      'clash-verge-service',
+      'clash-verge-service-install',
+      'clash-verge-service-uninstall',
+    ]) {
+      const src = resolve(extractDir, name)
+      const dest = resolve(resourcesDir, name)
+      const { copyFile } = await import('node:fs/promises')
+      await copyFile(src, dest)
+      console.log(`Copied ${name} -> ${dest}`)
+    }
+
     console.log('Service IPC binaries installed successfully')
   } catch (err) {
     console.error(`Failed to download service IPC: ${err.message}`)
