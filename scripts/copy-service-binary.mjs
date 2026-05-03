@@ -1,41 +1,78 @@
-import { copyFile } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { mkdir, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { pipeline } from 'node:stream/promises'
+
+import { extract as tarExtract } from 'tar'
+
+const IPC_VERSION = '2.3.0'
+const IPC_RELEASE_URL = `https://github.com/clash-verge-rev/clash-verge-service-ipc/releases/download/v${IPC_VERSION}/clash-verge-service-ipc-v${IPC_VERSION}-aarch64-apple-darwin.tar.gz`
 
 /**
- * Copy the main binary as clash-verge-service-install for TUN service installation.
- * Runs after tauri build, placing the binary into the bundle.
+ * Download the genuine clash-verge-service binaries from GitHub releases
+ * and place them in the app bundle for TUN service installation.
  */
 async function main() {
   const profile = process.env.CARGO_BUILD_PROFILE || 'release'
   const targetTriple = process.env.CARGO_BUILD_TARGET || ''
   const targetDir = process.env.CARGO_TARGET_DIR || 'target'
 
-  const binaryDir = resolve(targetDir, targetTriple, profile)
-  const src = resolve(binaryDir, 'clash-verge')
-  const dest = resolve(binaryDir, 'clash-verge-service-install')
+  const bundleDir = resolve(
+    targetDir,
+    `${targetTriple ? targetTriple + '/' : ''}${profile}/bundle/macos/Clash Verge.app/Contents/MacOS`,
+  )
 
-  // Copy to target dir (for next build's bundling)
+  const tarPath = resolve('/tmp', 'clash-verge-service-ipc.tar.gz')
+  const extractDir = resolve('/tmp', 'service-ipc-extract')
+
   try {
-    await copyFile(src, dest)
-    console.log(`Copied ${src} -> ${dest}`)
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      console.error('Binary not found, skipping service binary copy.')
+    console.log('Downloading clash-verge-service-ipc binaries...')
+    const response = await fetch(IPC_RELEASE_URL)
+    if (!response.ok) {
+      console.error(`Failed to download service IPC: ${response.status}`)
       return
     }
-    throw err
-  }
 
-  // Also copy into app bundle for immediate testing
-  const bundleDest = resolve(
-    targetDir,
-    `${targetTriple ? targetTriple + '/' : ''}${profile}/bundle/macos/Clash Verge.app/Contents/MacOS/clash-verge-service-install`,
-  )
-  try {
-    await copyFile(src, bundleDest)
-    console.log(`Copied ${src} -> ${bundleDest}`)
-  } catch {
-    // Bundle dir may not exist if build was partial
+    const fileStream = createWriteStream(tarPath)
+    await pipeline(response.body, fileStream)
+
+    await mkdir(extractDir, { recursive: true })
+
+    await tarExtract({ file: tarPath, cwd: extractDir })
+
+    // Copy service binaries to the app bundle
+    for (const name of [
+      'clash-verge-service',
+      'clash-verge-service-install',
+      'clash-verge-service-uninstall',
+    ]) {
+      const src = resolve(extractDir, name)
+      const dest = resolve(bundleDir, name)
+      const { copyFile } = await import('node:fs/promises')
+      await copyFile(src, dest)
+      console.log(`Copied ${name} -> ${dest}`)
+    }
+
+    // Also copy to target dir for next build
+    const binaryDir = resolve(targetDir, targetTriple, profile)
+    for (const name of [
+      'clash-verge-service',
+      'clash-verge-service-install',
+      'clash-verge-service-uninstall',
+    ]) {
+      const src = resolve(extractDir, name)
+      const dest = resolve(binaryDir, name)
+      const { copyFile } = await import('node:fs/promises')
+      await copyFile(src, dest)
+    }
+
+    console.log('Service IPC binaries installed successfully')
+  } catch (err) {
+    console.error(`Failed to download service IPC: ${err.message}`)
+  } finally {
+    try {
+      await unlink(tarPath)
+    } catch {}
   }
 }
 
