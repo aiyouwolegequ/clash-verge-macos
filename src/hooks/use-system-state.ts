@@ -29,6 +29,7 @@ export function useSystemState() {
   const { verge, patchVerge } = useVerge()
   const queryClient = useQueryClient()
   const disablingTunRef = useRef(false)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isStartingUp, setIsStartingUp] = useState(true)
 
   useEffect(() => {
@@ -80,25 +81,39 @@ export function useSystemState() {
       !isStartingUp
     ) {
       disablingTunRef.current = true
-      patchVerge({ enable_tun_mode: false })
-        .then(() => {
-          showNotice.info(
-            'settings.sections.system.notifications.tunMode.autoDisabled',
-          )
-        })
-        .catch((err) => {
-          console.error('[useVerge] 自动关闭TUN模式失败:', err)
-          showNotice.error(
-            'settings.sections.system.notifications.tunMode.autoDisableFailed',
-          )
-        })
-        .finally(() => {
-          // 避免 verge 数据更新不及时导致重复执行关闭 Tun 模式
-          cooldownTimerRef.current = setTimeout(() => {
-            disablingTunRef.current = false
-            cooldownTimerRef.current = null
-          }, 1000)
-        })
+      const doPatch = () =>
+        patchVerge({ enable_tun_mode: false })
+          .then(() => {
+            showNotice.info(
+              'settings.sections.system.notifications.tunMode.autoDisabled',
+            )
+          })
+          .catch((err: any) => {
+            const msg = String(err?.message ?? err)
+            // 配置验证并发冲突时延迟重试一次
+            if (msg.includes('already running')) {
+              console.warn('[useVerge] 配置验证中，延迟关闭TUN...')
+              retryTimerRef.current = setTimeout(() => {
+                patchVerge({ enable_tun_mode: false }).catch((e) =>
+                  console.error('[useVerge] 延迟关闭TUN失败:', e),
+                )
+              }, 2000)
+              return
+            }
+            console.error('[useVerge] 自动关闭TUN模式失败:', err)
+            showNotice.error(
+              'settings.sections.system.notifications.tunMode.autoDisableFailed',
+            )
+          })
+          .finally(() => {
+            // 避免 verge 数据更新不及时导致重复执行关闭 Tun 模式
+            cooldownTimerRef.current = setTimeout(() => {
+              disablingTunRef.current = false
+              cooldownTimerRef.current = null
+            }, 1000)
+          })
+
+      doPatch()
     }
 
     return () => {
@@ -106,6 +121,10 @@ export function useSystemState() {
         clearTimeout(cooldownTimerRef.current)
         cooldownTimerRef.current = null
         disablingTunRef.current = false
+      }
+      if (retryTimerRef.current != null) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
       }
     }
   }, [enable_tun_mode, isTunModeAvailable, patchVerge, isLoading, isStartingUp])

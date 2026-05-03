@@ -12,6 +12,11 @@
 - 修复全局流量统计在核心重启后数据不准确（累计值改为增量计算）
 - 修复前端服务安装失败后仍继续执行 `restartCore` 的问题
 - 修复 `ServiceStatus::Unavailable` 错误被静默吞掉，前端无法获知服务不可用
+- 修复 IPC 协议不匹配导致的 JSON 序列化错误（锁定 `clash_verge_service_ipc` 至 v2.3.0）
+- 修复 macOS 服务安装阻塞 UI（改为 async + 60s 超时）
+- 修复 TUN 模式自动关闭时与配置验证的并发冲突（增加 2s 延迟重试）
+- 修复切换代理节点后 IP 信息不刷新（增加 React Query 缓存失效）
+- 修复 prebuild 网络强依赖导致构建中断（sidecar 已存在时跳过版本检查）
 
 ### 🚀 优化改进
 
@@ -22,6 +27,9 @@
 - `osascript` prompt 字符串转义，防止 i18n 翻译导致命令注入
 - 前端 `mutateSystemState` 增加缓存失效 + 500ms 稳定延迟
 - 全链路增加 `Type::Service` / `Type::Setup` 结构化日志
+- `prepare_startup` TUN 服务等待时间延长至 12s（40 次 × 300ms）
+- `handle_service_status` 安装服务后使用 `wait_and_check_service_available` 等待就绪
+- 服务二进制文件改为从官方 releases 下载 v2.3.0 真实 daemon（替代 stub）
 
 ---
 
