@@ -20,7 +20,7 @@
     "createUpdaterArtifacts": true
   },
   "build": {
-    "beforeBuildCommand": "pnpm run web:build",
+    "beforeBuildCommand": "pnpm run web:build && node scripts/copy-service-binary.mjs",
     "frontendDist": "../dist",
     "beforeDevCommand": "pnpm run web:dev",
     "devUrl": "http://localhost:3000/",
