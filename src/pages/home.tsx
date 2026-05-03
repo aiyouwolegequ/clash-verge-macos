@@ -26,6 +26,7 @@ import { Suspense, lazy, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BasePage } from '@/components/base'
+import { AppTrafficStats } from '@/components/home/app-traffic-stats'
 import { ClashModeCard } from '@/components/home/clash-mode-card'
 import { CurrentProxyCard } from '@/components/home/current-proxy-card'
 import { EnhancedCard } from '@/components/home/enhanced-card'
@@ -395,6 +396,8 @@ const HomePage = () => {
 
         {nonCriticalCards}
       </Grid>
+
+      <AppTrafficStats />
 
       {/* 首页设置弹窗 */}
       <HomeSettingsDialog
