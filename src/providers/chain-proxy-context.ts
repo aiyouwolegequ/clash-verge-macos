@@ -1,4 +1,4 @@
-import { createContext, use } from 'react'
+import { createContext, useContext } from 'react'
 
 export interface ChainProxyContextType {
   isChainMode: boolean
@@ -12,7 +12,8 @@ export const ChainProxyContext = createContext<ChainProxyContextType | null>(
 )
 
 export const useChainProxy = () => {
-  const context = use(ChainProxyContext)
+  // eslint-disable-next-line @eslint-react/no-use-context
+  const context = useContext(ChainProxyContext)
   if (!context) {
     throw new Error('useChainProxy must be used within a ChainProxyProvider')
   }
