@@ -5,7 +5,13 @@ use anyhow::Result;
 use crate::{
     config::Config,
     core::{
-        CoreManager, Timer, handle::Handle, hotkey::Hotkey, logger::Logger, service::{SERVICE_MANAGER, ServiceManager, is_service_ipc_path_exists}, sysopt, tray::Tray,
+        CoreManager, Timer,
+        handle::Handle,
+        hotkey::Hotkey,
+        logger::Logger,
+        service::{SERVICE_MANAGER, ServiceManager, is_service_ipc_path_exists},
+        sysopt,
+        tray::Tray,
     },
     feat,
     module::{

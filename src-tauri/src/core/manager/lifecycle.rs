@@ -18,7 +18,16 @@ impl CoreManager {
         }
 
         match *self.get_running_mode() {
-            RunningMode::Service => self.start_core_by_service().await,
+            RunningMode::Service => {
+                match self.start_core_by_service().await {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        logging!(warn, Type::Core, "Service mode failed ({}), falling back to sidecar", e);
+                        self.set_running_mode(RunningMode::Sidecar);
+                        self.start_core_by_sidecar().await
+                    }
+                }
+            }
             RunningMode::NotRunning | RunningMode::Sidecar => self.start_core_by_sidecar().await,
         }
     }
