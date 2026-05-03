@@ -1,13 +1,17 @@
-import { LanOutlined, LanRounded } from '@mui/icons-material'
-import { Box, Button, ButtonGroup } from '@mui/material'
+import { AppsRounded, LanOutlined, LanRounded } from '@mui/icons-material'
+import { Box, Button, ButtonGroup, IconButton, Tooltip } from '@mui/material'
 import { useLockFn } from 'ahooks'
-import { useCallback, useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { closeAllConnections } from 'tauri-plugin-mihomo-api'
 
 import { BasePage } from '@/components/base'
 import { ProviderButton } from '@/components/proxy/provider-button'
 import { ProxyGroups } from '@/components/proxy/proxy-groups'
+import {
+  MacAppExcludeViewer,
+  type MacAppExcludeViewerRef,
+} from '@/components/setting/mods/mac-app-exclude-viewer'
 import { useVerge } from '@/hooks/use-verge'
 import {
   useAppRefreshers,
@@ -28,6 +32,7 @@ const isMode = (value: unknown): value is Mode =>
 
 const ProxyPage = () => {
   const { t } = useTranslation()
+  const macExcludeRef = useRef<MacAppExcludeViewerRef>(null)
 
   // 从 localStorage 恢复链式代理按钮状态
   const [isChainMode, setIsChainMode] = useState(() => {
@@ -169,6 +174,15 @@ const ProxyPage = () => {
           >
             {t('proxies.page.actions.toggleChain')}
           </Button>
+
+          <Tooltip title="macOS 直连应用">
+            <IconButton
+              size="small"
+              onClick={() => macExcludeRef.current?.open()}
+            >
+              <AppsRounded fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
       }
     >
@@ -177,6 +191,7 @@ const ProxyPage = () => {
         isChainMode={isChainMode}
         chainConfigData={chainConfigData}
       />
+      <MacAppExcludeViewer ref={macExcludeRef} />
     </BasePage>
   )
 }
