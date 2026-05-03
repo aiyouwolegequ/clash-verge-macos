@@ -70,35 +70,55 @@ impl CoreManager {
         Ok(())
     }
 
+    /// 启动前准备：决定以什么模式启动核心
+    ///
+    /// 策略说明：
+    /// - 如果服务已就绪（IPC 可连接），优先使用服务模式（无论 TUN 是否开启）
+    /// - 如果服务不可用，回退到 Sidecar 模式
+    /// - macOS 上额外的 TUN 特判：TUN 开启时会更积极地初始化服务
     async fn prepare_startup(&self) -> Result<()> {
         #[cfg(target_os = "windows")]
         self.wait_for_service_if_needed().await;
 
-        #[cfg(target_os = "macos")]
-        {
-            let needs_service = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
-            if !needs_service {
-                self.set_running_mode(RunningMode::Sidecar);
-                return Ok(());
-            }
+        let mut manager = SERVICE_MANAGER.lock().await;
+        let current = manager.current();
+
+        // 如果服务管理器已经标记为 Ready，直接使用服务模式
+        if matches!(current, ServiceStatus::Ready) {
+            self.set_running_mode(RunningMode::Service);
+            drop(manager);
+            logging!(info, Type::Core, "服务已就绪，使用 Service 模式启动");
+            return Ok(());
         }
 
-        let mut manager = SERVICE_MANAGER.lock().await;
-
-        #[cfg(target_os = "macos")]
-        {
-            // TUN enabled but SERVICE_MANAGER may not have been refreshed yet.
-            if !matches!(manager.current(), ServiceStatus::Ready)
-                && service::is_service_ipc_path_exists()
-            {
-                let _ = manager.init().await;
+        // 服务不是 Ready 状态，尝试初始化
+        if service::is_service_ipc_path_exists() {
+            logging!(info, Type::Core, "发现服务 IPC，尝试初始化服务管理器");
+            if manager.init().await.is_ok() {
                 let _ = manager.refresh().await;
             }
         }
 
+        // macOS 特判：TUN 开启时额外尝试等待服务启动
+        #[cfg(target_os = "macos")]
+        {
+            let needs_tun = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
+            if needs_tun && !matches!(manager.current(), ServiceStatus::Ready) {
+                logging!(info, Type::Core, "TUN 模式需要服务，等待服务 IPC 就绪...");
+                // 给 LaunchDaemon 最多 3 秒启动时间
+                let _ = service::wait_and_check_service_available(&mut manager).await;
+            }
+        }
+
         let mode = match manager.current() {
-            ServiceStatus::Ready => RunningMode::Service,
-            _ => RunningMode::Sidecar,
+            ServiceStatus::Ready => {
+                logging!(info, Type::Core, "使用 Service 模式启动");
+                RunningMode::Service
+            }
+            _ => {
+                logging!(info, Type::Core, "服务不可用，使用 Sidecar 模式启动");
+                RunningMode::Sidecar
+            }
         };
 
         self.set_running_mode(mode);

@@ -75,7 +75,15 @@ impl Config {
             let is_admin = is_current_app_handle_admin(handle);
             // On macOS, TUN requires the service helper with admin privileges.
             // If neither is available, force-disable TUN to avoid startup errors.
-            if !is_admin && !service::is_service_ipc_path_exists() {
+            // Check both IPC socket (runtime) and LaunchDaemon plist (persistent)
+            // to avoid race condition where socket hasn't been created yet at boot.
+            let service_installed = service::is_service_ipc_path_exists()
+                || std::path::Path::new(
+                    "/Library/LaunchDaemons/io.github.clash-verge-rev.clash-verge-rev.service.plist",
+                )
+                .exists();
+            if !is_admin && !service_installed {
+                logging!(info, Type::Core, "macOS 非管理员且服务未安装，自动关闭 TUN 模式");
                 let verge = Self::verge().await;
                 verge.edit_draft(|d| {
                     d.enable_tun_mode = Some(false);

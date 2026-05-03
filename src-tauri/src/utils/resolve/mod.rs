@@ -187,13 +187,25 @@ pub(super) async fn init_verge_config() {
 
 pub(super) async fn init_service_manager() {
     clash_verge_service_ipc::set_config(Some(ServiceManager::config())).await;
+
     if !is_service_ipc_path_exists() {
+        logging!(info, Type::Setup, "服务 IPC socket 不存在，跳过服务管理器初始化");
         return;
     }
+
+    logging!(info, Type::Setup, "发现服务 IPC socket，初始化服务管理器");
     let mut manager = SERVICE_MANAGER.lock().await;
-    if manager.init().await.is_ok() {
-        logging_error!(Type::Setup, manager.refresh().await);
+    match manager.init().await {
+        Ok(()) => {
+            logging!(info, Type::Setup, "服务管理器连接成功，刷新状态");
+            logging_error!(Type::Setup, manager.refresh().await);
+        }
+        Err(e) => {
+            logging!(warn, Type::Setup, "服务管理器初始化失败: {}（将在启动核心时重试）", e);
+        }
     }
+    let status = manager.current();
+    logging!(info, Type::Setup, "服务管理器最终状态: {:?}", status);
     drop(manager);
 }
 

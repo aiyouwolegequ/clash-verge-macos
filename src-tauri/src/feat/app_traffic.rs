@@ -42,6 +42,7 @@ pub fn init_app_traffic_daemon() {
         logging!(info, Type::Core, "App traffic daemon started");
 
         let mut last_connection_stats: HashMap<String, (u64, u64)> = HashMap::new();
+        let mut last_global_total: (u64, u64) = (0, 0);
         let mut current_interval = MIN_POLL_INTERVAL;
         let mut consecutive_failures: u32 = 0;
 
@@ -91,7 +92,14 @@ pub fn init_app_traffic_daemon() {
 
             let global_up = connections.upload_total;
             let global_down = connections.download_total;
-            if let Err(e) = insert_global_traffic(global_up, global_down).await {
+            // 计算全局流量增量（与 per-app 统计保持一致）
+            // 核心重启后 total 归零，delta 为 0（saturating_sub），不会产生错误数据
+            let delta_global_up = global_up.saturating_sub(last_global_total.0);
+            let delta_global_down = global_down.saturating_sub(last_global_total.1);
+            last_global_total = (global_up, global_down);
+            if (delta_global_up > 0 || delta_global_down > 0)
+                && let Err(e) = insert_global_traffic(delta_global_up, delta_global_down).await
+            {
                 logging!(error, Type::Core, "Failed to insert global traffic: {}", e);
             }
 
@@ -340,25 +348,23 @@ pub async fn query_global_traffic(period: &str) -> anyhow::Result<Option<GlobalT
 
     let mut db_guard = DB_CONN.lock().await;
     if let Some(conn) = db_guard.as_mut() {
-        let start_query = "SELECT upload_bytes, download_bytes FROM global_traffic
-                           WHERE timestamp >= ?1 ORDER BY timestamp ASC LIMIT 1";
-        let mut start_stmt = conn.prepare(start_query)?;
-        let start_row = start_stmt.query_row(params![start_str], |row| {
-            Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
+        // 现在 global_traffic 存储的是增量值，直接 SUM 即可
+        // 不再受核心重启导致累计值归零的影响
+        let query = "SELECT SUM(upload_bytes), SUM(download_bytes) FROM global_traffic
+                     WHERE timestamp >= ?1";
+        let mut stmt = conn.prepare(query)?;
+        let result = stmt.query_row(params![start_str], |row| {
+            Ok((
+                row.get::<_, Option<i64>>(0)?.unwrap_or(0) as u64,
+                row.get::<_, Option<i64>>(1)?.unwrap_or(0) as u64,
+            ))
         });
 
-        let end_query = "SELECT upload_bytes, download_bytes FROM global_traffic
-                         ORDER BY timestamp DESC LIMIT 1";
-        let mut end_stmt = conn.prepare(end_query)?;
-        let end_row = end_stmt.query_row([], |row| {
-            Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
-        });
-
-        match (start_row, end_row) {
-            (Ok((start_up, start_down)), Ok((end_up, end_down))) => {
+        match result {
+            Ok((up, down)) if up > 0 || down > 0 => {
                 return Ok(Some(GlobalTrafficStat {
-                    upload_bytes: end_up.saturating_sub(start_up),
-                    download_bytes: end_down.saturating_sub(start_down),
+                    upload_bytes: up,
+                    download_bytes: down,
                 }));
             }
             _ => return Ok(None),

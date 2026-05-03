@@ -5,39 +5,36 @@ import { showNotice } from '@/services/notice-service'
 
 import { useSystemState } from './use-system-state'
 
-const executeWithErrorHandling = async (
-  operation: () => Promise<void>,
-  loadingKey: string,
-  successKey?: string,
-) => {
-  try {
-    showNotice.info(loadingKey)
-    await operation()
-    if (successKey) {
-      showNotice.success(successKey)
-    }
-  } catch (err) {
-    showNotice.error(err)
-  }
-}
-
 export const useServiceInstaller = () => {
   const { mutateSystemState } = useSystemState()
 
   const installServiceAndRestartCore = useCallback(async () => {
-    await executeWithErrorHandling(
-      () => installService(),
-      'settings.statuses.clashService.installing',
-      'settings.feedback.notifications.clashService.installSuccess',
-    )
+    // 步骤 1：安装服务
+    try {
+      showNotice.info('settings.statuses.clashService.installing')
+      await installService()
+      showNotice.success(
+        'settings.feedback.notifications.clashService.installSuccess',
+      )
+    } catch (err) {
+      showNotice.error(err)
+      // 安装失败后仍刷新状态，让 UI 反映真实状况
+      await mutateSystemState()
+      return
+    }
 
-    await executeWithErrorHandling(
-      () => restartCore(),
-      'settings.statuses.clash.restarting',
-      'settings.feedback.notifications.clash.restartSuccess',
-    )
+    // 步骤 2：重启核心以使用服务模式
+    try {
+      showNotice.info('settings.statuses.clash.restarting')
+      await restartCore()
+      showNotice.success('settings.feedback.notifications.clash.restartSuccess')
+    } catch (err) {
+      showNotice.error(err)
+    }
 
+    // 步骤 3：刷新系统状态
     await mutateSystemState()
   }, [mutateSystemState])
+
   return { installServiceAndRestartCore }
 }
