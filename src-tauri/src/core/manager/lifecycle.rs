@@ -66,6 +66,15 @@ impl CoreManager {
         #[cfg(target_os = "windows")]
         self.wait_for_service_if_needed().await;
 
+        #[cfg(target_os = "macos")]
+        {
+            let needs_service = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
+            if !needs_service {
+                self.set_running_mode(RunningMode::Sidecar);
+                return Ok(());
+            }
+        }
+
         let value = SERVICE_MANAGER.lock().await.current();
         let mode = match value {
             ServiceStatus::Ready => RunningMode::Service,
