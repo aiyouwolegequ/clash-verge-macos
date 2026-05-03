@@ -3,31 +3,39 @@ import { resolve } from 'node:path'
 
 /**
  * Copy the main binary as clash-verge-service-install for TUN service installation.
- * Runs before Tauri bundles the app, so the binary is included in the .app package.
+ * Runs after tauri build, placing the binary into the bundle.
  */
-
-const BINARY_NAME = 'clash-verge'
-const SERVICE_BINARY_NAME = 'clash-verge-service-install'
-
 async function main() {
   const profile = process.env.CARGO_BUILD_PROFILE || 'release'
-  const target = process.env.CARGO_BUILD_TARGET || ''
+  const targetTriple = process.env.CARGO_BUILD_TARGET || ''
   const targetDir = process.env.CARGO_TARGET_DIR || 'target'
 
-  const binaryDir = resolve(targetDir, target, profile)
-  const src = resolve(binaryDir, BINARY_NAME)
-  const dest = resolve(binaryDir, SERVICE_BINARY_NAME)
+  const binaryDir = resolve(targetDir, targetTriple, profile)
+  const src = resolve(binaryDir, 'clash-verge')
+  const dest = resolve(binaryDir, 'clash-verge-service-install')
 
+  // Copy to target dir (for next build's bundling)
   try {
     await copyFile(src, dest)
     console.log(`Copied ${src} -> ${dest}`)
   } catch (err) {
     if (err.code === 'ENOENT') {
-      console.error(`Binary not found at ${src}, skipping copy.`)
-    } else {
-      console.error(`Failed to copy service binary: ${err.message}`)
-      process.exit(1)
+      console.error('Binary not found, skipping service binary copy.')
+      return
     }
+    throw err
+  }
+
+  // Also copy into app bundle for immediate testing
+  const bundleDest = resolve(
+    targetDir,
+    `${targetTriple ? targetTriple + '/' : ''}${profile}/bundle/macos/Clash Verge.app/Contents/MacOS/clash-verge-service-install`,
+  )
+  try {
+    await copyFile(src, bundleDest)
+    console.log(`Copied ${src} -> ${bundleDest}`)
+  } catch {
+    // Bundle dir may not exist if build was partial
   }
 }
 
