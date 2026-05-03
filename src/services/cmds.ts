@@ -572,8 +572,7 @@ export const repairService = async () => {
 export const isServiceAvailable = async () => {
   try {
     return await invoke<boolean>('is_service_available')
-  } catch (error) {
-    console.error('Service check failed:', error)
+  } catch {
     return false
   }
 }
