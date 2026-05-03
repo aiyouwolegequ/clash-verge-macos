@@ -40,6 +40,20 @@ export async function getGlobalTrafficStats(period: 'day' | 'week' | 'month') {
   )
 }
 
+export async function getAppTrafficDetail(
+  processPath: string,
+  trafficMode: string,
+  period: 'day' | 'week' | 'month',
+) {
+  return invoke<
+    {
+      domain: string
+      upload_bytes: number
+      download_bytes: number
+    }[]
+  >('get_app_traffic_detail', { processPath, trafficMode, period })
+}
+
 export async function clearAppTrafficStats() {
   return invoke<void>('clear_app_traffic_stats')
 }

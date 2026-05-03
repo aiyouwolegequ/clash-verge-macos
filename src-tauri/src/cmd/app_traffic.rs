@@ -1,10 +1,24 @@
 use crate::cmd::CmdResult;
 use crate::cmd::StringifyErr as _;
-use crate::feat::app_traffic::{AppTrafficStat, GlobalTrafficStat, clear_traffic, query_global_traffic, query_traffic};
+use crate::feat::app_traffic::{
+    AppTrafficDomainStat, AppTrafficStat, GlobalTrafficStat, clear_traffic, query_global_traffic, query_traffic,
+    query_traffic_detail,
+};
 
 #[tauri::command]
 pub async fn get_app_traffic_stats(period: String) -> CmdResult<Vec<AppTrafficStat>> {
     query_traffic(&period).await.stringify_err()
+}
+
+#[tauri::command]
+pub async fn get_app_traffic_detail(
+    process_path: String,
+    traffic_mode: String,
+    period: String,
+) -> CmdResult<Vec<AppTrafficDomainStat>> {
+    query_traffic_detail(&process_path, &traffic_mode, &period)
+        .await
+        .stringify_err()
 }
 
 #[tauri::command]

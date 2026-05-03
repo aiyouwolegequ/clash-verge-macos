@@ -9,6 +9,10 @@ import {
 import {
   Box,
   Chip,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Paper,
   Table,
@@ -25,7 +29,11 @@ import {
 } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { clearAppTrafficStats, getAppTrafficStats } from '@/services/cmds'
+import {
+  clearAppTrafficStats,
+  getAppTrafficDetail,
+  getAppTrafficStats,
+} from '@/services/cmds'
 import parseTraffic from '@/utils/parse-traffic'
 
 const spin = keyframes({
@@ -60,6 +68,15 @@ export const AppTrafficStats = () => {
   const [order, setOrder] = useState<Order>('desc')
   const [orderBy, setOrderBy] = useState<SortKey>('total_bytes')
 
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailItem, setDetailItem] = useState<AppTrafficItem | null>(null)
+  const [detailData, setDetailData] = useState<
+    { domain: string; upload_bytes: number; download_bytes: number }[]
+  >([])
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailOrder, setDetailOrder] = useState<Order>('desc')
+  const [detailOrderBy, setDetailOrderBy] = useState<SortKey>('total_bytes')
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -72,9 +89,40 @@ export const AppTrafficStats = () => {
     }
   }, [period])
 
+  const fetchDetail = useCallback(
+    async (item: AppTrafficItem) => {
+      setDetailLoading(true)
+      try {
+        const data = await getAppTrafficDetail(
+          item.process_path,
+          item.traffic_mode,
+          period,
+        )
+        setDetailData(data)
+      } catch {
+        setDetailData([])
+      } finally {
+        setDetailLoading(false)
+      }
+    },
+    [period],
+  )
+
+  const handleRowClick = (item: AppTrafficItem) => {
+    setDetailItem(item)
+    setDetailOpen(true)
+    fetchDetail(item)
+  }
+
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => {
+    if (detailOpen && detailItem) {
+      fetchDetail(detailItem)
+    }
+  }, [detailOpen, detailItem, period, fetchDetail])
 
   const handleSort = (key: SortKey) => {
     if (orderBy === key) {
@@ -130,6 +178,22 @@ export const AppTrafficStats = () => {
     items.forEach((i) => modes.add(i.traffic_mode))
     return Array.from(modes)
   }, [items])
+
+  const sortedDetailData = useMemo(() => {
+    const result = [...detailData]
+    result.sort((a, b) => {
+      const cmp =
+        detailOrderBy === 'upload_bytes'
+          ? a.upload_bytes - b.upload_bytes
+          : detailOrderBy === 'download_bytes'
+            ? a.download_bytes - b.download_bytes
+            : a.upload_bytes +
+              a.download_bytes -
+              (b.upload_bytes + b.download_bytes)
+      return detailOrder === 'asc' ? cmp : -cmp
+    })
+    return result
+  }, [detailData, detailOrder, detailOrderBy])
 
   if (items.length === 0 && !loading) {
     return null
@@ -254,6 +318,8 @@ export const AppTrafficStats = () => {
             {filteredItems.map((item) => (
               <TableRow
                 key={`${item.process_name}-${item.traffic_mode}-${item.process_path}`}
+                onClick={() => handleRowClick(item)}
+                sx={{ cursor: 'pointer' }}
               >
                 <TableCell
                   sx={{
@@ -305,6 +371,134 @@ export const AppTrafficStats = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Dialog
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <AppsRounded fontSize="small" />
+            <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
+              {detailItem ? displayName(detailItem) : ''} ·{' '}
+              {detailItem?.traffic_mode}
+            </Typography>
+            {detailLoading && <CircularProgress size={16} />}
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <TableContainer sx={{ maxHeight: 400 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>域名</TableCell>
+                  <TableCell align="right">
+                    <TableSortLabel
+                      active={detailOrderBy === 'upload_bytes'}
+                      direction={
+                        detailOrderBy === 'upload_bytes' ? detailOrder : 'desc'
+                      }
+                      onClick={() => {
+                        if (detailOrderBy === 'upload_bytes') {
+                          setDetailOrder(detailOrder === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setDetailOrderBy('upload_bytes')
+                          setDetailOrder('desc')
+                        }
+                      }}
+                    >
+                      上传
+                    </TableSortLabel>
+                  </TableCell>
+                  <TableCell align="right">
+                    <TableSortLabel
+                      active={detailOrderBy === 'download_bytes'}
+                      direction={
+                        detailOrderBy === 'download_bytes'
+                          ? detailOrder
+                          : 'desc'
+                      }
+                      onClick={() => {
+                        if (detailOrderBy === 'download_bytes') {
+                          setDetailOrder(detailOrder === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setDetailOrderBy('download_bytes')
+                          setDetailOrder('desc')
+                        }
+                      }}
+                    >
+                      下载
+                    </TableSortLabel>
+                  </TableCell>
+                  <TableCell align="right">
+                    <TableSortLabel
+                      active={detailOrderBy === 'total_bytes'}
+                      direction={
+                        detailOrderBy === 'total_bytes' ? detailOrder : 'desc'
+                      }
+                      onClick={() => {
+                        if (detailOrderBy === 'total_bytes') {
+                          setDetailOrder(detailOrder === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setDetailOrderBy('total_bytes')
+                          setDetailOrder('desc')
+                        }
+                      }}
+                    >
+                      合计
+                    </TableSortLabel>
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {sortedDetailData.map((item) => (
+                  <TableRow key={item.domain}>
+                    <TableCell
+                      sx={{
+                        maxWidth: 280,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      <Typography variant="body2" noWrap>
+                        {item.domain}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color="error.main"
+                        sx={{ fontFamily: 'monospace' }}
+                      >
+                        {parseTraffic(item.upload_bytes)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color="success.main"
+                        sx={{ fontFamily: 'monospace' }}
+                      >
+                        {parseTraffic(item.download_bytes)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        sx={{ fontFamily: 'monospace' }}
+                      >
+                        {parseTraffic(item.upload_bytes + item.download_bytes)}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+      </Dialog>
     </Paper>
   )
 }
