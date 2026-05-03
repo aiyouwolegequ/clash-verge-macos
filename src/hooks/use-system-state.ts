@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 
 import { getRunningMode, isAdmin, isServiceAvailable } from '@/services/cmds'
@@ -27,6 +27,7 @@ const STARTUP_GRACE_MS = 10_000
  */
 export function useSystemState() {
   const { verge, patchVerge } = useVerge()
+  const queryClient = useQueryClient()
   const disablingTunRef = useRef(false)
   const [isStartingUp, setIsStartingUp] = useState(true)
 
@@ -37,7 +38,7 @@ export function useSystemState() {
 
   const {
     data: systemState = defaultSystemState,
-    refetch: mutateSystemState,
+    refetch: refetchSystemState,
     isLoading,
   } = useQuery({
     queryKey: ['getSystemState'],
@@ -51,6 +52,15 @@ export function useSystemState() {
     },
     refetchInterval: isStartingUp ? 2000 : 30000,
   })
+
+  // 立即刷新状态（用于服务安装/卸载后）
+  const mutateSystemState = async () => {
+    // 等一小段时间让后端状态稳定
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    // 使缓存失效并重新获取
+    await queryClient.invalidateQueries({ queryKey: ['getSystemState'] })
+    return refetchSystemState()
+  }
 
   const isSidecarMode = systemState.runningMode === 'Sidecar'
   const isServiceMode = systemState.runningMode === 'Service'

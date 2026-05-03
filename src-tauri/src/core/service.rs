@@ -243,21 +243,18 @@ fn uninstall_service() -> Result<()> {
 
     let uninstall_shell: String = uninstall_path.to_string_lossy().into_owned();
 
-    // clash_verge_i18n::sync_locale(Config::verge().await.latest_arc().language.as_deref());
-
-    let prompt = clash_verge_i18n::t!("service.adminUninstallPrompt");
+    let prompt = escape_osascript_string(&clash_verge_i18n::t!("service.adminUninstallPrompt"));
     let command =
         format!(r#"do shell script "sudo '{uninstall_shell}'" with administrator privileges with prompt "{prompt}""#);
-
-    // logging!(debug, Type::Service, "uninstall command: {}", command);
 
     let status = StdCommand::new("osascript").args(vec!["-e", &command]).status()?;
 
     if !status.success() {
-        bail!(
-            "failed to uninstall service with status {}",
-            status.code().unwrap_or(-1)
-        );
+        let code = status.code().unwrap_or(-1);
+        if code == -128 {
+            bail!("用户取消了授权");
+        }
+        bail!("failed to uninstall service with status {}", code);
     }
 
     Ok(())
@@ -276,16 +273,17 @@ fn install_service() -> Result<()> {
 
     let install_shell: String = install_path.to_string_lossy().into_owned();
 
-    // clash_verge_i18n::sync_locale(Config::verge().await.latest_arc().language.as_deref());
-
     let gid = tauri_plugin_clash_verge_sysinfo::current_gid();
-    let prompt = clash_verge_i18n::t!("service.adminInstallPrompt");
+    let prompt = escape_osascript_string(&clash_verge_i18n::t!("service.adminInstallPrompt"));
     let command = format!(
         r#"do shell script "sudo CLASH_VERGE_SERVICE_GID={gid} '{install_shell}'" with administrator privileges with prompt "{prompt}""#
     );
 
     let output = StdCommand::new("osascript").args(vec!["-e", &command]).output()?;
     if let Some((code, err)) = check_output_error(&output) {
+        if code == -128 {
+            bail!("用户取消了授权");
+        }
         logging!(
             error,
             Type::Service,
@@ -296,7 +294,14 @@ fn install_service() -> Result<()> {
         bail!("failed to install service code: {}, details: {}", code, err);
     }
 
+    logging!(info, Type::Service, "service binary installed successfully");
     Ok(())
+}
+
+/// 转义 osascript 字符串中的特殊字符，防止命令注入
+#[cfg(target_os = "macos")]
+fn escape_osascript_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn check_output_error(output: &std::process::Output) -> Option<(i32, Cow<'_, str>)> {
@@ -333,8 +338,20 @@ fn reinstall_service() -> Result<()> {
 }
 
 /// 强制重装服务（UI修复按钮）
+/// 与普通 reinstall 不同：先清理残留 IPC socket 文件
 fn force_reinstall_service() -> Result<()> {
     logging!(info, Type::Service, "用户请求强制重装服务");
+
+    // 清理可能残留的 IPC socket 文件
+    let ipc_path = Path::new(clash_verge_service_ipc::IPC_PATH);
+    if ipc_path.exists() {
+        if let Err(e) = std::fs::remove_file(ipc_path) {
+            logging!(warn, Type::Service, "清理残留 IPC socket 失败: {}", e);
+        } else {
+            logging!(info, Type::Service, "已清理残留 IPC socket");
+        }
+    }
+
     reinstall_service().map_err(|err| {
         logging!(error, Type::Service, "强制重装服务失败: {}", err);
         err
@@ -389,19 +406,27 @@ pub(super) async fn start_with_existing_service(config_file: &PathBuf) -> Result
     logging!(info, Type::Service, "服务成功启动核心");
     Ok(())
 }
-// 以服务启动core
+
+/// 以服务启动core — 确认服务就绪后启动
 pub(super) async fn run_core_by_service(config_file: &PathBuf) -> Result<()> {
     logging!(info, Type::Service, "正在尝试通过服务启动核心");
 
-    SERVICE_MANAGER.lock().await.refresh().await?;
+    // 确保服务可连接，无需 refresh 整个状态机（避免不必要的重装逻辑）
+    let manager = SERVICE_MANAGER.lock().await;
+    let status = manager.current();
+    drop(manager);
 
-    logging!(info, Type::Service, "服务已运行且版本匹配，直接使用");
+    if !matches!(status, ServiceStatus::Ready) {
+        // 尝试直接连接一次验证
+        if let Err(e) = try_connect_service().await {
+            bail!("服务未就绪，无法通过服务启动核心: {}", e);
+        }
+    }
+
     start_with_existing_service(config_file).await
 }
 
 pub(super) async fn get_clash_logs_by_service() -> Result<Vec<CompactString>> {
-    logging!(info, Type::Service, "正在获取服务模式下的 Clash 日志");
-
     let response = clash_verge_service_ipc::get_clash_logs()
         .await
         .context("无法连接到Clash Verge Service")?;
@@ -412,7 +437,6 @@ pub(super) async fn get_clash_logs_by_service() -> Result<Vec<CompactString>> {
         bail!(err_msg);
     }
 
-    logging!(info, Type::Service, "成功获取服务模式下的 Clash 日志");
     Ok(response.data.unwrap_or_default())
 }
 
@@ -434,7 +458,7 @@ pub(super) async fn stop_core_by_service() -> Result<()> {
     Ok(())
 }
 
-/// 检查服务是否正在运行
+/// 检查服务是否正在运行（供前端 is_service_available 命令使用）
 pub async fn is_service_available() -> Result<()> {
     if let Err(e) = Path::metadata(clash_verge_service_ipc::IPC_PATH.as_ref()) {
         return Err(e.into());
@@ -443,21 +467,26 @@ pub async fn is_service_available() -> Result<()> {
     Ok(())
 }
 
-pub async fn wait_and_check_service_available(status: &mut ServiceManager) -> Result<()> {
-    wait_for_service_ipc(status, "Waiting for service to be available").await
+/// 尝试连接服务，带重试
+async fn try_connect_service() -> Result<()> {
+    let backoff = ConstantBuilder::default()
+        .with_delay(Duration::from_millis(300))
+        .with_max_times(3);
+
+    (|| async {
+        clash_verge_service_ipc::connect().await.map_err(|e| {
+            logging!(trace, Type::Service, "connect attempt: {}", e);
+            e
+        })
+    })
+    .retry(backoff)
+    .await
+    .context("无法连接到服务 IPC")
+    .map(|_| ())
 }
 
-#[allow(dead_code)]
-async fn wait_and_check_service_version(status: &mut ServiceManager) -> Result<()> {
-    wait_and_check_service_available(status).await?;
-
-    if clash_verge_service_ipc::is_reinstall_service_needed().await {
-        logging!(info, Type::Service, "服务版本不匹配，执行重装流程");
-        reinstall_service()?;
-        wait_and_check_service_available(status).await?;
-    }
-
-    Ok(())
+pub async fn wait_and_check_service_available(status: &mut ServiceManager) -> Result<()> {
+    wait_for_service_ipc(status, "Waiting for service to be available").await
 }
 
 async fn wait_for_service_ipc(status: &mut ServiceManager, reason: &str) -> Result<()> {
@@ -481,6 +510,9 @@ async fn wait_for_service_ipc(status: &mut ServiceManager, reason: &str) -> Resu
 
     if result.is_ok() {
         status.0 = ServiceStatus::Ready;
+        logging!(info, Type::Service, "服务 IPC 连接就绪");
+    } else {
+        logging!(warn, Type::Service, "等待服务 IPC 超时");
     }
 
     result
@@ -503,12 +535,14 @@ impl ServiceManager {
         }
     }
 
-    #[allow(dead_code)]
+    /// 初始化服务管理器：尝试连接并更新状态
     pub async fn init(&mut self) -> Result<()> {
         if let Err(e) = clash_verge_service_ipc::connect().await {
-            self.0 = ServiceStatus::Unavailable("服务连接失败: {e}".to_string());
+            self.0 = ServiceStatus::Unavailable(format!("服务连接失败: {e}"));
             return Err(e);
         }
+        self.0 = ServiceStatus::Ready;
+        logging!(info, Type::Service, "服务管理器初始化完成，服务可连接");
         Ok(())
     }
 
@@ -516,23 +550,31 @@ impl ServiceManager {
         self.0.clone()
     }
 
+    /// 刷新服务状态：检查 + 按需处理（仅 refresh 内部调用 handle_service_status）
     pub async fn refresh(&mut self) -> Result<()> {
         let status = self.check_service_comprehensive().await;
+        logging!(info, Type::Service, "服务状态检查结果: {:?}", status);
         self.0 = status.clone();
+        // refresh 路径使用 logging_error 吞掉错误（Unavailable 时不应阻断启动流程）
         logging_error!(Type::Service, self.handle_service_status(&status).await);
         Ok(())
     }
 
     /// 综合服务状态检查（一次性完成所有检查）
     pub async fn check_service_comprehensive(&self) -> ServiceStatus {
+        // 首先检查 IPC 路径是否存在
+        if !is_service_ipc_path_exists() {
+            return ServiceStatus::Unavailable("IPC socket not found".into());
+        }
+
         #[cfg(target_os = "macos")]
         {
             // On macOS, skip the version check (is_reinstall_service_needed)
             // which causes infinite reinstall loops. Just check if we can connect.
-            if clash_verge_service_ipc::connect().await.is_ok() {
-                ServiceStatus::Ready
-            } else {
-                ServiceStatus::Unavailable("Service not connectable on macOS".into())
+            // Retry a few times to handle transient IPC failures after service install.
+            match try_connect_service().await {
+                Ok(()) => ServiceStatus::Ready,
+                Err(e) => ServiceStatus::Unavailable(format!("macOS 服务连接失败: {e}")),
             }
         }
         #[cfg(not(target_os = "macos"))]
@@ -544,10 +586,12 @@ impl ServiceManager {
     }
 
     /// 根据服务状态执行相应操作
+    /// 注意: 从 cmd/service.rs 直接调用时，Unavailable 会返回错误以通知前端。
+    ///       从 refresh() 调用时，错误被 logging_error! 吞掉，不影响启动流程。
     pub async fn handle_service_status(&mut self, status: &ServiceStatus) -> Result<()> {
         match status {
             ServiceStatus::Ready => {
-                logging!(info, Type::Service, "服务就绪，直接启动");
+                logging!(info, Type::Service, "服务就绪");
                 self.0 = ServiceStatus::Ready;
             }
             ServiceStatus::NeedsReinstall | ServiceStatus::ReinstallRequired => {
@@ -569,11 +613,13 @@ impl ServiceManager {
                 logging!(info, Type::Service, "服务需要卸载，执行卸载流程");
                 uninstall_service()?;
                 self.0 = ServiceStatus::Unavailable("Service Uninstalled".into());
+                // 卸载后核心已停止，跳过 Tray 更新（会因核心不可用而失败）
+                return Ok(());
             }
             ServiceStatus::Unavailable(reason) => {
-                logging!(info, Type::Service, "服务不可用: {}，将使用Sidecar模式", reason);
+                logging!(warn, Type::Service, "服务不可用: {}", reason);
                 self.0 = ServiceStatus::Unavailable(reason.clone());
-                return Ok(());
+                bail!("服务不可用: {}", reason);
             }
         }
 
