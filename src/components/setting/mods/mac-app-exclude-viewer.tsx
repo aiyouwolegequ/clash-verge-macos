@@ -97,7 +97,10 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
         onClose={() => setOpen(false)}
         title="macOS 直连应用"
         okBtn="确定"
-        onOk={() => setOpen(false)}
+        onOk={() => {
+          setOpen(false)
+          if (excludeApps.length > 0) refreshMacExcludeApps()
+        }}
         disableCancel
         contentSx={{
           width: 450,
