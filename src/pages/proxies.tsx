@@ -97,9 +97,8 @@ const ProxyPage = () => {
         const exitNode = localStorage.getItem('proxy-chain-exit-node')
 
         if (!exitNode) {
-          console.error('No proxy chain exit node found in localStorage')
           if (!cancelled) {
-            updateChainConfigData('')
+            updateChainConfigData(null)
           }
           return
         }

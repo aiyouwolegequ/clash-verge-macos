@@ -1,4 +1,4 @@
-import { LoadingButton } from '@mui/lab'
+import { Button as LoadingButton } from '@mui/material'
 import {
   Button,
   Dialog,

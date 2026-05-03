@@ -20,7 +20,7 @@ import {
   RefreshRounded,
   TextSnippetOutlined,
 } from '@mui/icons-material'
-import { LoadingButton } from '@mui/lab'
+import { Button as LoadingButton } from '@mui/material'
 import { Box, Button, Divider, Grid, IconButton, Stack } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 import { listen, TauriEvent } from '@tauri-apps/api/event'
