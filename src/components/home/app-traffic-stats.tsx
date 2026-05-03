@@ -17,6 +17,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -48,10 +49,16 @@ const modeColors: Record<string, 'success' | 'error' | 'warning' | 'info'> = {
   代理: 'info',
 }
 
+type Order = 'asc' | 'desc'
+type SortKey = 'upload_bytes' | 'download_bytes' | 'total_bytes'
+
 export const AppTrafficStats = () => {
   const [period, setPeriod] = useState<Period>('day')
   const [items, setItems] = useState<AppTrafficItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [modeFilter, setModeFilter] = useState<string | null>(null)
+  const [order, setOrder] = useState<Order>('desc')
+  const [orderBy, setOrderBy] = useState<SortKey>('total_bytes')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -69,13 +76,40 @@ export const AppTrafficStats = () => {
     fetchData()
   }, [fetchData])
 
+  const handleSort = (key: SortKey) => {
+    if (orderBy === key) {
+      setOrder(order === 'asc' ? 'desc' : 'asc')
+    } else {
+      setOrderBy(key)
+      setOrder('desc')
+    }
+  }
+
+  const filteredItems = useMemo(() => {
+    const result = modeFilter
+      ? items.filter((i) => i.traffic_mode === modeFilter)
+      : [...items]
+    result.sort((a, b) => {
+      const cmp =
+        orderBy === 'upload_bytes'
+          ? a.upload_bytes - b.upload_bytes
+          : orderBy === 'download_bytes'
+            ? a.download_bytes - b.download_bytes
+            : a.upload_bytes +
+              a.download_bytes -
+              (b.upload_bytes + b.download_bytes)
+      return order === 'asc' ? cmp : -cmp
+    })
+    return result
+  }, [items, modeFilter, order, orderBy])
+
   const totalUp = useMemo(
-    () => items.reduce((sum, i) => sum + i.upload_bytes, 0),
-    [items],
+    () => filteredItems.reduce((sum, i) => sum + i.upload_bytes, 0),
+    [filteredItems],
   )
   const totalDown = useMemo(
-    () => items.reduce((sum, i) => sum + i.download_bytes, 0),
-    [items],
+    () => filteredItems.reduce((sum, i) => sum + i.download_bytes, 0),
+    [filteredItems],
   )
 
   const displayName = (item: AppTrafficItem) => {
@@ -90,6 +124,12 @@ export const AppTrafficStats = () => {
     }
     return last || item.process_name || 'Unknown'
   }
+
+  const availableModes = useMemo(() => {
+    const modes = new Set<string>()
+    items.forEach((i) => modes.add(i.traffic_mode))
+    return Array.from(modes)
+  }, [items])
 
   if (items.length === 0 && !loading) {
     return null
@@ -145,6 +185,25 @@ export const AppTrafficStats = () => {
         </Box>
       </Box>
 
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Chip
+          label="全部"
+          size="small"
+          variant={modeFilter === null ? 'filled' : 'outlined'}
+          onClick={() => setModeFilter(null)}
+        />
+        {availableModes.map((mode) => (
+          <Chip
+            key={mode}
+            label={mode}
+            size="small"
+            color={modeColors[mode] || 'default'}
+            variant={modeFilter === mode ? 'filled' : 'outlined'}
+            onClick={() => setModeFilter(mode)}
+          />
+        ))}
+      </Box>
+
       <Box sx={{ display: 'flex', gap: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <ArrowUpwardRounded fontSize="small" color="error" />
@@ -162,13 +221,37 @@ export const AppTrafficStats = () => {
             <TableRow>
               <TableCell>应用</TableCell>
               <TableCell>模式</TableCell>
-              <TableCell align="right">上传</TableCell>
-              <TableCell align="right">下载</TableCell>
-              <TableCell align="right">合计</TableCell>
+              <TableCell align="right">
+                <TableSortLabel
+                  active={orderBy === 'upload_bytes'}
+                  direction={orderBy === 'upload_bytes' ? order : 'desc'}
+                  onClick={() => handleSort('upload_bytes')}
+                >
+                  上传
+                </TableSortLabel>
+              </TableCell>
+              <TableCell align="right">
+                <TableSortLabel
+                  active={orderBy === 'download_bytes'}
+                  direction={orderBy === 'download_bytes' ? order : 'desc'}
+                  onClick={() => handleSort('download_bytes')}
+                >
+                  下载
+                </TableSortLabel>
+              </TableCell>
+              <TableCell align="right">
+                <TableSortLabel
+                  active={orderBy === 'total_bytes'}
+                  direction={orderBy === 'total_bytes' ? order : 'desc'}
+                  onClick={() => handleSort('total_bytes')}
+                >
+                  合计
+                </TableSortLabel>
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {items.map((item) => (
+            {filteredItems.map((item) => (
               <TableRow
                 key={`${item.process_name}-${item.traffic_mode}-${item.process_path}`}
               >

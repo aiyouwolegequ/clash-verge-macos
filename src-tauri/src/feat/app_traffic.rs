@@ -45,6 +45,7 @@ pub fn init_app_traffic_daemon() {
         let mut last_global_total: (u64, u64) = (0, 0);
         let mut current_interval = MIN_POLL_INTERVAL;
         let mut consecutive_failures: u32 = 0;
+        let mut is_first_poll = true;
 
         loop {
             sleep(Duration::from_secs(current_interval)).await;
@@ -97,7 +98,10 @@ pub fn init_app_traffic_daemon() {
             let delta_global_up = global_up.saturating_sub(last_global_total.0);
             let delta_global_down = global_down.saturating_sub(last_global_total.1);
             last_global_total = (global_up, global_down);
-            if (delta_global_up > 0 || delta_global_down > 0)
+
+            // 首次轮询仅建立基准，不写入数据库，避免 burst
+            if !is_first_poll
+                && (delta_global_up > 0 || delta_global_down > 0)
                 && let Err(e) = insert_global_traffic(delta_global_up, delta_global_down).await
             {
                 logging!(error, Type::Core, "Failed to insert global traffic: {}", e);
@@ -110,6 +114,10 @@ pub fn init_app_traffic_daemon() {
                 for conn in conns {
                     let process_path = &conn.metadata.process_path;
                     let process_name = &conn.metadata.process;
+                    let host = &conn.metadata.host;
+                    let remote_destination = &conn.metadata.remote_destination;
+
+                    // macOS TUN 模式下 process/process_path 为空，回退到 host/remote_destination
                     let display_name = if !process_path.is_empty() {
                         let mut name = process_path.clone();
                         if process_path.starts_with("/Applications/") && process_path.contains(".app/") {
@@ -122,14 +130,22 @@ pub fn init_app_traffic_daemon() {
                         name
                     } else if !process_name.is_empty() {
                         process_name.clone()
+                    } else if !host.is_empty() {
+                        host.clone()
+                    } else if !remote_destination.is_empty() {
+                        remote_destination.clone()
                     } else {
                         continue;
                     };
 
                     let path_for_key = if !process_path.is_empty() {
                         process_path.clone()
-                    } else {
+                    } else if !process_name.is_empty() {
                         format!("<{}>", process_name.as_str())
+                    } else if !host.is_empty() {
+                        format!("[{}]", host.as_str())
+                    } else {
+                        format!("[{}]", remote_destination.as_str())
                     };
 
                     let is_direct = conn.chains.iter().any(|c| c.eq_ignore_ascii_case("direct"))
@@ -164,19 +180,23 @@ pub fn init_app_traffic_daemon() {
                     }
                 }
 
-                let mut db_deltas = Vec::new();
-                for (key, (up, down)) in deltas {
-                    db_deltas.push((key.0, key.1, key.2, up, down));
-                }
+                // 首次轮询仅建立基准，不写入数据库
+                if !is_first_poll {
+                    let mut db_deltas = Vec::new();
+                    for (key, (up, down)) in deltas {
+                        db_deltas.push((key.0, key.1, key.2, up, down));
+                    }
 
-                if !db_deltas.is_empty()
-                    && let Err(e) = insert_traffic_deltas(&db_deltas).await
-                {
-                    logging!(error, Type::Core, "Failed to insert traffic: {}", e);
+                    if !db_deltas.is_empty()
+                        && let Err(e) = insert_traffic_deltas(&db_deltas).await
+                    {
+                        logging!(error, Type::Core, "Failed to insert traffic: {}", e);
+                    }
                 }
             }
 
             last_connection_stats = current_connection_stats;
+            is_first_poll = false;
         }
     });
 }

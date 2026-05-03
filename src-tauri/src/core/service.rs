@@ -248,10 +248,14 @@ async fn uninstall_service() -> Result<()> {
 
     let status = tokio::time::timeout(
         std::time::Duration::from_secs(60),
-        tokio::process::Command::new("osascript").args(vec!["-e", &command]).status(),
+        tokio::process::Command::new("osascript")
+            .args(vec!["-e", &command])
+            .status(),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("osascript 超时：请在系统设置 > 隐私与安全性 > 自动化中允许 Clash Verge 控制 System Events"))??;
+    .map_err(|_| {
+        anyhow::anyhow!("osascript 超时：请在系统设置 > 隐私与安全性 > 自动化中允许 Clash Verge 控制 System Events")
+    })??;
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
@@ -285,10 +289,14 @@ async fn install_service() -> Result<()> {
 
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(60),
-        tokio::process::Command::new("osascript").args(vec!["-e", &command]).output(),
+        tokio::process::Command::new("osascript")
+            .args(vec!["-e", &command])
+            .output(),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("osascript 超时：请在系统设置 > 隐私与安全性 > 自动化中允许 Clash Verge 控制 System Events"))??;
+    .map_err(|_| {
+        anyhow::anyhow!("osascript 超时：请在系统设置 > 隐私与安全性 > 自动化中允许 Clash Verge 控制 System Events")
+    })??;
 
     if let Some((code, err)) = check_output_error(&output) {
         if code == -128 {
