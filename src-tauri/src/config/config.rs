@@ -69,10 +69,29 @@ impl Config {
         clash_verge_i18n::sync_locale(verge.language.as_deref());
 
         // init Tun mode
-        let handle = Handle::app_handle();
-        let is_admin = is_current_app_handle_admin(handle);
-        let is_service_available = service::is_service_available().await.is_ok();
-        if !is_admin && !is_service_available {
+        #[cfg(target_os = "macos")]
+        {
+            let handle = Handle::app_handle();
+            let is_admin = is_current_app_handle_admin(handle);
+            // On macOS, TUN requires the service helper with admin privileges.
+            // If neither is available, force-disable TUN to avoid startup errors.
+            if !is_admin && !service::is_service_ipc_path_exists() {
+                let verge = Self::verge().await;
+                verge.edit_draft(|d| {
+                    d.enable_tun_mode = Some(false);
+                });
+                verge.apply();
+                let _ = tray::Tray::global().update_menu().await;
+                let verge_data = Self::verge().await.latest_arc();
+                logging_error!(Type::Core, verge_data.save_file().await);
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let handle = Handle::app_handle();
+            let is_admin = is_current_app_handle_admin(handle);
+            let is_service_available = service::is_service_available().await.is_ok();
+            if !is_admin && !is_service_available {
             let verge = Self::verge().await;
             verge.edit_draft(|d| {
                 d.enable_tun_mode = Some(false);
@@ -83,6 +102,7 @@ impl Config {
             // 分离数据获取和异步调用避免Send问题
             let verge_data = Self::verge().await.latest_arc();
             logging_error!(Type::Core, verge_data.save_file().await);
+            }
         }
 
         let validation_result = Self::generate_and_validate().await?;
