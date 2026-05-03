@@ -1,3 +1,14 @@
+## v2.7.8
+
+> [!IMPORTANT]
+> 本版本修复 React 19 实验性 `use` hook 可能导致的生产构建运行时错误。
+
+### 🐞 修复问题
+
+- 将 React 19 实验性 `use` hook 替换为稳定的 `useContext`，消除潜在的 hooks 计数不匹配问题（Minified React error #310）
+
+---
+
 ## v2.7.7
 
 > [!IMPORTANT]
