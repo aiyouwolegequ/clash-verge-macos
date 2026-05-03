@@ -511,6 +511,17 @@ impl ServiceManager {
 
     /// 综合服务状态检查（一次性完成所有检查）
     pub async fn check_service_comprehensive(&self) -> ServiceStatus {
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, skip the version check (is_reinstall_service_needed)
+            // which causes infinite reinstall loops. Just check if we can connect.
+            if clash_verge_service_ipc::connect().await.is_ok() {
+                ServiceStatus::Ready
+            } else {
+                ServiceStatus::Unavailable("Service not connectable on macOS".into())
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
         if clash_verge_service_ipc::is_reinstall_service_needed().await {
             ServiceStatus::NeedsReinstall
         } else {
