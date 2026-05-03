@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::{
     config::Config,
     core::{
-        CoreManager, Timer, handle::Handle, hotkey::Hotkey, logger::Logger, service::ServiceManager, sysopt, tray::Tray,
+        CoreManager, Timer, handle::Handle, hotkey::Hotkey, logger::Logger, service::{SERVICE_MANAGER, ServiceManager, is_service_ipc_path_exists}, sysopt, tray::Tray,
     },
     feat,
     module::{
@@ -181,18 +181,14 @@ pub(super) async fn init_verge_config() {
 
 pub(super) async fn init_service_manager() {
     clash_verge_service_ipc::set_config(Some(ServiceManager::config())).await;
-    #[cfg(not(target_os = "macos"))]
-    {
-        if !service::is_service_ipc_path_exists() {
-            return;
-        }
-        let mut manager = service::SERVICE_MANAGER.lock().await;
-        if manager.init().await.is_ok() {
-            logging_error!(Type::Setup, manager.refresh().await);
-        }
-        drop(manager);
+    if !is_service_ipc_path_exists() {
+        return;
     }
-    // macOS: service install/uninstall is handled by the TUN toggle UI.
+    let mut manager = SERVICE_MANAGER.lock().await;
+    if manager.init().await.is_ok() {
+        logging_error!(Type::Setup, manager.refresh().await);
+    }
+    drop(manager);
 }
 
 pub(super) async fn init_core_manager() {
