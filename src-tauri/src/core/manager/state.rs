@@ -25,6 +25,15 @@ impl CoreManager {
     pub(super) async fn start_core_by_sidecar(&self) -> Result<()> {
         logging!(info, Type::Core, "Starting core in sidecar mode");
 
+        // Kill any stale Mihomo processes (e.g. left by a previous service attempt)
+        // to free ports 7897 and 53 before starting the sidecar.
+        #[cfg(target_os = "macos")]
+        {
+            use std::process::Command;
+            let _ = Command::new("pkill").arg("-f").arg("verge-mihomo").output();
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
         let config_file = Config::generate_file(crate::config::ConfigType::Run).await?;
         let app_handle = handle::Handle::app_handle();
         let clash_core = Config::verge().await.latest_arc().get_valid_clash_core();

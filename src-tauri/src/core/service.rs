@@ -362,9 +362,25 @@ pub(super) async fn start_with_existing_service(config_file: &PathBuf) -> Result
         log_config: Logger::global().service_writer_config()?,
     };
 
-    let response = clash_verge_service_ipc::start_clash(&payload)
-        .await
-        .context("无法连接到Clash Verge Service")?;
+    // Retry start_clash with backoff — the service may not be fully initialized
+    // immediately after install/restart on macOS.
+    use backon::{ExponentialBuilder, Retryable as _};
+    let backoff = ExponentialBuilder::default()
+        .with_min_delay(std::time::Duration::from_millis(200))
+        .with_max_delay(std::time::Duration::from_secs(3))
+        .with_max_times(5);
+
+    let response = (|| async {
+        clash_verge_service_ipc::start_clash(&payload)
+            .await
+            .map_err(|e| {
+                logging!(warn, Type::Service, "start_clash attempt failed: {}", e);
+                e
+            })
+    })
+    .retry(backoff)
+    .await
+    .context("无法连接到Clash Verge Service")?;
 
     if response.code > 0 {
         let err_msg = response.message;
@@ -375,7 +391,6 @@ pub(super) async fn start_with_existing_service(config_file: &PathBuf) -> Result
     logging!(info, Type::Service, "服务成功启动核心");
     Ok(())
 }
-
 // 以服务启动core
 pub(super) async fn run_core_by_service(config_file: &PathBuf) -> Result<()> {
     logging!(info, Type::Service, "正在尝试通过服务启动核心");
