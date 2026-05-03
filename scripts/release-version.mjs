@@ -134,6 +134,24 @@ function getBaseVersion(version) {
 }
 
 /**
+ * 自动递增版本号
+ * @param {string} baseVersion 如 2.7.5
+ * @param {'patch'|'minor'|'major'} level
+ * @returns {string}
+ */
+function bumpVersion(baseVersion, level) {
+  const parts = baseVersion.split('.').map(Number)
+  const [major, minor, patch] = parts
+  if (level === 'major') {
+    return `${major + 1}.0.0`
+  }
+  if (level === 'minor') {
+    return `${major}.${minor + 1}.0`
+  }
+  return `${major}.${minor}.${patch + 1}`
+}
+
+/**
  * 更新 package.json 版本号
  * @param {string} newVersion
  */
@@ -268,8 +286,13 @@ async function main(versionArg) {
       'autobuild-latest',
       'deploytest',
     ]
+    const bumpLevels = ['patch', 'minor', 'major']
 
-    if (validTags.includes(versionArg.toLowerCase())) {
+    if (bumpLevels.includes(versionArg.toLowerCase())) {
+      const currentVersion = await getCurrentVersion()
+      const baseVersion = getBaseVersion(currentVersion)
+      newVersion = bumpVersion(baseVersion, versionArg.toLowerCase())
+    } else if (validTags.includes(versionArg.toLowerCase())) {
       const currentVersion = await getCurrentVersion()
       const baseVersion = getBaseVersion(currentVersion)
 
