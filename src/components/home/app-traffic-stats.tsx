@@ -57,14 +57,25 @@ const modeColors: Record<string, 'success' | 'error' | 'warning' | 'info'> = {
   代理: 'info',
 }
 
-/** 清理应用名称：去除尾部版本号 */
+/** 清理应用名称：去除 .app 后缀、尾部版本号，规范化大小写 */
 function cleanAppName(name: string | undefined | null): string | undefined {
   if (!name) return undefined
   let cleaned = name.trim()
+  // 去除 .app/.APP 后缀
+  cleaned = cleaned.replace(/\.app$/i, '')
   // 去除尾部版本号 " 128.0.6613.138" 或 " 1.2.3"
   cleaned = cleaned.replace(/\s+\d+(?:\.\d+)+\s*$/, '')
   // 去除尾部括号内版本 "(128.0.6613.138)" 或 "(1.2.3)"
   cleaned = cleaned.replace(/\s*\(\d+(?:\.\d+)*\)\s*$/, '')
+  // 去除尾部 "v" 前缀版本号 " v2.7.9"
+  cleaned = cleaned.replace(/\s+v\d+(?:\.\d+)*\s*$/i, '')
+  // 规范化大小写：将 "-" 和 "_" 替换为空格，并首字母大写
+  // 但保留已包含大写字母的名称（如 Google Chrome）不被破坏
+  if (cleaned && !/[A-Z]/.test(cleaned)) {
+    cleaned = cleaned
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  }
   return cleaned.trim() || undefined
 }
 
@@ -179,7 +190,11 @@ export const AppTrafficStats = () => {
     // 优先从 .app bundle 路径提取应用名
     if (item.process_path.includes('.app')) {
       const match = item.process_path.match(/\/([^/]+)\.app/)
-      if (match) return match[1]
+      if (match) {
+        const cleaned = cleanAppName(match[1])
+        if (cleaned) return cleaned
+        return match[1]
+      }
     }
     // 回退到路径末尾分段
     const last = item.process_path.split('/').pop() || ''

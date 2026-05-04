@@ -1,3 +1,17 @@
+## v2.7.10
+
+> [!IMPORTANT]
+> 本版本进一步优化应用流量统计中的应用名称可读性，彻底去除 `.app` 后缀，规范全小写应用名的大小写，并清理更多版本号格式。
+
+### 🚀 优化改进
+
+- 应用名称彻底去除 `.app` / `.APP` 后缀（如 `Google Chrome.app` → `Google Chrome`）
+- 全小写应用名自动规范化大小写（如 `google-chrome-stable` → `Google Chrome Stable`，`curl` → `Curl`）
+- 支持清理 `v` 前缀版本号（如 `Clash Verge v2.7.9` → `Clash Verge`）
+- 后端数据入库时同步去除 `.app` 后缀，从源头保证数据干净
+
+---
+
 ## v2.7.9
 
 > [!IMPORTANT]

@@ -66,7 +66,7 @@ async fn resolve_process_by_port(port: &str) -> Option<(String, String)> {
                 if !path.is_empty() && path.starts_with('/') {
                     let name = if path.starts_with("/Applications/") && path.contains(".app/") {
                         if let Some(idx) = path.find(".app/") {
-                            path[14..idx + 4].to_string()
+                            path[14..idx].to_string()
                         } else {
                             current_cmd.clone()
                         }
@@ -213,7 +213,7 @@ pub fn init_app_traffic_daemon() {
                         let mut name = process_path.clone();
                         if process_path.starts_with("/Applications/") && process_path.contains(".app/") {
                             if let Some(app_idx) = process_path.find(".app/") {
-                                name = process_path[14..app_idx + 4].to_string();
+                                name = process_path[14..app_idx].to_string();
                             }
                         } else if let Some(pos) = process_path.rfind('/') {
                             name = process_path[pos + 1..].to_string();
