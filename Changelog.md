@@ -1,3 +1,15 @@
+## v2.7.9
+
+> [!IMPORTANT]
+> 本版本优化应用流量统计中的应用名称可读性，正确提取 .app Bundle 名并去除尾部版本号。
+
+### 🚀 优化改进
+
+- 修复 `.app` 路径在中间时无法正确提取 Bundle 名称的问题（如 `Software Update.app/Contents/MacOS/softwareupdate` → `Software Update`）
+- 应用名尾部版本号自动清理（如 `Google Chrome 128.0.6613.138` → `Google Chrome`）
+
+---
+
 ## v2.7.8
 
 > [!IMPORTANT]

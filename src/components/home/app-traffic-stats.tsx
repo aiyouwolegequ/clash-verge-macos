@@ -57,6 +57,17 @@ const modeColors: Record<string, 'success' | 'error' | 'warning' | 'info'> = {
   代理: 'info',
 }
 
+/** 清理应用名称：去除尾部版本号 */
+function cleanAppName(name: string | undefined | null): string | undefined {
+  if (!name) return undefined
+  let cleaned = name.trim()
+  // 去除尾部版本号 " 128.0.6613.138" 或 " 1.2.3"
+  cleaned = cleaned.replace(/\s+\d+(?:\.\d+)+\s*$/, '')
+  // 去除尾部括号内版本 "(128.0.6613.138)" 或 "(1.2.3)"
+  cleaned = cleaned.replace(/\s*\(\d+(?:\.\d+)*\)\s*$/, '')
+  return cleaned.trim() || undefined
+}
+
 type Order = 'asc' | 'desc'
 type SortKey = 'upload_bytes' | 'download_bytes' | 'total_bytes'
 
@@ -161,16 +172,18 @@ export const AppTrafficStats = () => {
   )
 
   const displayName = (item: AppTrafficItem) => {
+    // 无进程路径 → 清理 process_name 后显示
     if (!item.process_path || item.process_path.startsWith('<')) {
-      return item.process_name || 'Unknown'
+      return cleanAppName(item.process_name) || 'Unknown'
     }
-    const parts = item.process_path.split('/')
-    const last = parts[parts.length - 1]
-    if (last.endsWith('.app') || last.includes('.app/')) {
-      const appName = item.process_path.match(/\/([^/]+)\.app/)?.[1]
-      return appName || last
+    // 优先从 .app bundle 路径提取应用名
+    if (item.process_path.includes('.app')) {
+      const match = item.process_path.match(/\/([^/]+)\.app/)
+      if (match) return match[1]
     }
-    return last || item.process_name || 'Unknown'
+    // 回退到路径末尾分段
+    const last = item.process_path.split('/').pop() || ''
+    return cleanAppName(last) || cleanAppName(item.process_name) || 'Unknown'
   }
 
   const availableModes = useMemo(() => {
