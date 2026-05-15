@@ -154,3 +154,4 @@
 ### 👙 界面样式
 
 - 代理组实现sticky scroll的效果
+- 代理组实现 Sticky Scroll 效果
