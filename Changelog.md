@@ -32,6 +32,10 @@
 ### 🐞 修复问题
 
 - 将 React 19 实验性 `use` hook 替换为稳定的 `useContext`，消除潜在的 hooks 计数不匹配问题（Minified React error #310）
+- 备份设置功能异常
+
+<details>
+<summary><strong> ✨ 新增功能 </strong></summary>
 
 ---
 

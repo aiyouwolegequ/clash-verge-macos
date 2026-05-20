@@ -1,4 +1,3 @@
-import { Button as LoadingButton } from '@mui/material'
 import {
   Button,
   Dialog,
@@ -66,9 +65,9 @@ export const BaseDialog: React.FC<Props> = ({
             </Button>
           )}
           {!disableOk && (
-            <LoadingButton loading={loading} variant="contained" onClick={onOk}>
+            <Button loading={loading} variant="contained" onClick={onOk}>
               {okBtn}
-            </LoadingButton>
+            </Button>
           )}
         </DialogActions>
       )}
