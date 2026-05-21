@@ -764,7 +764,7 @@ async fn create_tray_menu(
     let app_version = &MenuItem::with_id(
         app_handle,
         MenuIds::VERGE_VERSION,
-        format!("{} {version}", &texts.verge_version),
+        format!("{} {version}", texts.verge_version),
         true,
         None::<&str>,
     )?;
