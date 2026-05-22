@@ -52,9 +52,6 @@ fn format_tray_speed(up: u64, down: u64) -> String {
     format!("{:>6}\n{:>6}", up_str, down_str)
 }
 
-/// 构造带富文本样式属性的 NSDictionary
-///
-/// 包含：等宽字体、自适应标签颜色、右对齐段落样式
 fn build_attributes(button_height: f64) -> Retained<NSDictionary<NSString, AnyObject>> {
     unsafe {
         // 等宽系统字体，确保数字不跳动
@@ -90,7 +87,7 @@ fn build_attributes(button_height: f64) -> Retained<NSDictionary<NSString, AnyOb
 ///
 /// # Arguments
 /// * `text` - 富文本字符串内容
-/// * `attrs` - 富文本属性字典
+/// * `attrs` - 可选富文本属性字典（None 表示用默认属性）
 fn create_attributed_string(
     text: &NSString,
     attrs: Option<&NSDictionary<NSString, AnyObject>>,
