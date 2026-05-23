@@ -111,7 +111,7 @@ export const useProxySelection = (options: ProxySelectionOptions = {}) => {
           config.autoCloseConnection &&
           previousProxy
         ) {
-          setTimeout(() => cleanupConnections(previousProxy), 0)
+          void cleanupConnections(previousProxy)
         }
       } catch (error) {
         console.error(
