@@ -5,7 +5,6 @@ import fsp from 'fs/promises'
 import path from 'path'
 import zlib from 'zlib'
 
-import AdmZip from 'adm-zip'
 import { glob } from 'glob'
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import fetch from 'node-fetch'
@@ -29,30 +28,10 @@ const VERSION_CACHE_FILE = path.join(TEMP_DIR, '.version_cache.json')
 const HASH_CACHE_FILE = path.join(TEMP_DIR, '.hash_cache.json')
 
 const PLATFORM_MAP = {
-  'x86_64-pc-windows-msvc': 'win32',
-  'i686-pc-windows-msvc': 'win32',
-  'aarch64-pc-windows-msvc': 'win32',
-  'x86_64-apple-darwin': 'darwin',
   'aarch64-apple-darwin': 'darwin',
-  'x86_64-unknown-linux-gnu': 'linux',
-  'i686-unknown-linux-gnu': 'linux',
-  'aarch64-unknown-linux-gnu': 'linux',
-  'armv7-unknown-linux-gnueabihf': 'linux',
-  'riscv64gc-unknown-linux-gnu': 'linux',
-  'loongarch64-unknown-linux-gnu': 'linux',
 }
 const ARCH_MAP = {
-  'x86_64-pc-windows-msvc': 'x64',
-  'i686-pc-windows-msvc': 'ia32',
-  'aarch64-pc-windows-msvc': 'arm64',
-  'x86_64-apple-darwin': 'x64',
   'aarch64-apple-darwin': 'arm64',
-  'x86_64-unknown-linux-gnu': 'x64',
-  'i686-unknown-linux-gnu': 'ia32',
-  'aarch64-unknown-linux-gnu': 'arm64',
-  'armv7-unknown-linux-gnueabihf': 'arm',
-  'riscv64gc-unknown-linux-gnu': 'riscv64',
-  'loongarch64-unknown-linux-gnu': 'loong64',
 }
 
 const arg1 = process.argv.slice(2)[0]
@@ -70,8 +49,7 @@ const SIDECAR_HOST = target
 
 const RESOURCES_DIR = path.join(cwd, 'src-tauri', 'resources')
 const SIDECAR_DIR = path.join(cwd, 'src-tauri', 'sidecar')
-// Linux service binaries are bundled as externalBin sidecars (see tauri.linux.conf.json)
-const SERVICE_DIR = platform === 'linux' ? SIDECAR_DIR : RESOURCES_DIR
+const SERVICE_DIR = RESOURCES_DIR
 
 // =======================
 // Version Cache
@@ -181,31 +159,11 @@ const META_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download`
 let META_VERSION
 
 const META_ALPHA_MAP = {
-  'win32-x64': 'mihomo-windows-amd64-v2',
-  'win32-ia32': 'mihomo-windows-386',
-  'win32-arm64': 'mihomo-windows-arm64',
-  'darwin-x64': 'mihomo-darwin-amd64-v1-go122',
   'darwin-arm64': 'mihomo-darwin-arm64-go122',
-  'linux-x64': 'mihomo-linux-amd64-v2',
-  'linux-ia32': 'mihomo-linux-386',
-  'linux-arm64': 'mihomo-linux-arm64',
-  'linux-arm': 'mihomo-linux-armv7',
-  'linux-riscv64': 'mihomo-linux-riscv64',
-  'linux-loong64': 'mihomo-linux-loong64',
 }
 
 const META_MAP = {
-  'win32-x64': 'mihomo-windows-amd64-v2',
-  'win32-ia32': 'mihomo-windows-386',
-  'win32-arm64': 'mihomo-windows-arm64',
-  'darwin-x64': 'mihomo-darwin-amd64-v2-go122',
   'darwin-arm64': 'mihomo-darwin-arm64-go122',
-  'linux-x64': 'mihomo-linux-amd64-v2',
-  'linux-ia32': 'mihomo-linux-386',
-  'linux-arm64': 'mihomo-linux-arm64',
-  'linux-arm': 'mihomo-linux-armv7',
-  'linux-riscv64': 'mihomo-linux-riscv64',
-  'linux-loong64': 'mihomo-linux-loong64',
 }
 
 // =======================
@@ -292,27 +250,23 @@ if (!META_ALPHA_MAP[`${platform}-${arch}`]) {
 // =======================
 function clashMetaAlpha() {
   const name = META_ALPHA_MAP[`${platform}-${arch}`]
-  const isWin = platform === 'win32'
-  const urlExt = isWin ? 'zip' : 'gz'
   return {
     name: 'verge-mihomo-alpha',
-    targetFile: `verge-mihomo-alpha-${SIDECAR_HOST}${isWin ? '.exe' : ''}`,
-    exeFile: `${name}${isWin ? '.exe' : ''}`,
-    zipFile: `${name}-${META_ALPHA_VERSION}.${urlExt}`,
-    downloadURL: `${META_ALPHA_URL_PREFIX}/${name}-${META_ALPHA_VERSION}.${urlExt}`,
+    targetFile: `verge-mihomo-alpha-${SIDECAR_HOST}`,
+    exeFile: name,
+    zipFile: `${name}-${META_ALPHA_VERSION}.gz`,
+    downloadURL: `${META_ALPHA_URL_PREFIX}/${name}-${META_ALPHA_VERSION}.gz`,
   }
 }
 
 function clashMeta() {
   const name = META_MAP[`${platform}-${arch}`]
-  const isWin = platform === 'win32'
-  const urlExt = isWin ? 'zip' : 'gz'
   return {
     name: 'verge-mihomo',
-    targetFile: `verge-mihomo-${SIDECAR_HOST}${isWin ? '.exe' : ''}`,
-    exeFile: `${name}${isWin ? '.exe' : ''}`,
-    zipFile: `${name}-${META_VERSION}.${urlExt}`,
-    downloadURL: `${META_URL_PREFIX}/${META_VERSION}/${name}-${META_VERSION}.${urlExt}`,
+    targetFile: `verge-mihomo-${SIDECAR_HOST}`,
+    exeFile: name,
+    zipFile: `${name}-${META_VERSION}.gz`,
+    downloadURL: `${META_URL_PREFIX}/${META_VERSION}/${name}-${META_VERSION}.gz`,
   }
 }
 
@@ -380,7 +334,6 @@ async function resolveSidecar(binInfo) {
 
   const tempDir = path.join(TEMP_DIR, name)
   const tempZip = path.join(tempDir, zipFile)
-  const tempExe = path.join(tempDir, exeFile)
   await fsp.mkdir(tempDir, { recursive: true })
 
   try {
@@ -388,31 +341,7 @@ async function resolveSidecar(binInfo) {
       await downloadFile(downloadURL, tempZip)
     }
 
-    if (zipFile.endsWith('.zip')) {
-      const zip = new AdmZip(tempZip)
-      zip.getEntries().forEach((entry) => {
-        log_debug(`"${name}" entry: ${entry.entryName}`)
-      })
-      zip.extractAllTo(tempDir, true)
-      // 尝试按 exeFile 重命名，否则找第一个可执行文件
-      if (fs.existsSync(tempExe)) {
-        await fsp.rename(tempExe, sidecarPath)
-      } else {
-        // 搜索候选
-        const files = await fsp.readdir(tempDir)
-        const candidate = files.find(
-          (f) =>
-            f === path.basename(exeFile) ||
-            f.endsWith('.exe') ||
-            !f.includes('.'),
-        )
-        if (!candidate)
-          throw new Error(`Expected binary not found in ${tempDir}`)
-        await fsp.rename(path.join(tempDir, candidate), sidecarPath)
-      }
-      if (platform !== 'win32') execSync(`chmod 755 ${sidecarPath}`)
-      log_success(`unzip finished: "${name}"`)
-    } else if (zipFile.endsWith('.tgz')) {
+    if (zipFile.endsWith('.tgz')) {
       await extract({ cwd: tempDir, file: tempZip })
       const files = await fsp.readdir(tempDir)
       log_debug(`"${name}" extracted files:`, files)
@@ -441,7 +370,7 @@ async function resolveSidecar(binInfo) {
           })
           .pipe(writeStream)
           .on('finish', () => {
-            if (platform !== 'win32') execSync(`chmod 755 ${sidecarPath}`)
+            execSync(`chmod 755 ${sidecarPath}`)
             resolve()
           })
           .on('error', (e) => {
@@ -490,52 +419,6 @@ async function resolveResource(binInfo) {
   }
 
   log_success(`${file} finished`)
-}
-
-// SimpleSC.dll (win plugin)
-const resolvePlugin = async () => {
-  const url =
-    'https://nsis.sourceforge.io/mediawiki/images/e/ef/NSIS_Simple_Service_Plugin_Unicode_1.30.zip'
-  const tempDir = path.join(TEMP_DIR, 'SimpleSC')
-  const tempZip = path.join(
-    tempDir,
-    'NSIS_Simple_Service_Plugin_Unicode_1.30.zip',
-  )
-  const tempDll = path.join(tempDir, 'SimpleSC.dll')
-  const pluginDir = path.join(process.env.APPDATA || '', 'Local/NSIS')
-  const pluginPath = path.join(pluginDir, 'SimpleSC.dll')
-  await fsp.mkdir(pluginDir, { recursive: true })
-  await fsp.mkdir(tempDir, { recursive: true })
-  if (!FORCE && fs.existsSync(pluginPath)) return
-  try {
-    if (!fs.existsSync(tempZip)) {
-      await downloadFile(url, tempZip)
-    }
-    const zip = new AdmZip(tempZip)
-    zip
-      .getEntries()
-      .forEach((entry) => log_debug(`"SimpleSC" entry`, entry.entryName))
-    zip.extractAllTo(tempDir, true)
-    if (fs.existsSync(tempDll)) {
-      await fsp.cp(tempDll, pluginPath, { recursive: true, force: true })
-      log_success(`unzip finished: "SimpleSC"`)
-    } else {
-      // 如果 dll 名称不同，尝试找到 dll
-      const files = await fsp.readdir(tempDir)
-      const dll = files.find((f) => f.toLowerCase().endsWith('.dll'))
-      if (dll) {
-        await fsp.cp(path.join(tempDir, dll), pluginPath, {
-          recursive: true,
-          force: true,
-        })
-        log_success(`unzip finished: "SimpleSC" (found ${dll})`)
-      } else {
-        throw new Error('SimpleSC.dll not found in zip')
-      }
-    }
-  } finally {
-    await fsp.rm(tempDir, { recursive: true, force: true })
-  }
 }
 
 // service chmod (保留并使用 glob)
@@ -590,12 +473,7 @@ const SERVICE_BINARIES = [
 ]
 
 function serviceFileInfo(name) {
-  const ext = platform === 'win32' ? '.exe' : ''
-  const suffix = platform === 'linux' ? '-' + SIDECAR_HOST : ''
-  return {
-    sourceFile: `${name}${ext}`,
-    targetFile: `${name}${suffix}${ext}`,
-  }
+  return { sourceFile: name, targetFile: name }
 }
 
 function parseServiceVersionFromUrl(url) {
@@ -674,8 +552,7 @@ async function resolveServiceBundle() {
 
   await getLatestServiceVersion()
 
-  const archiveExt = platform === 'win32' ? 'zip' : 'tar.gz'
-  const archiveFile = `clash-verge-service-ipc-${SERVICE_VERSION}-${SIDECAR_HOST}.${archiveExt}`
+  const archiveFile = `clash-verge-service-ipc-${SERVICE_VERSION}-${SIDECAR_HOST}.tar.gz`
   const downloadURL = `${SERVICE_URL_PREFIX}/${SERVICE_VERSION}/${archiveFile}`
   const tempDir = path.join(TEMP_DIR, 'clash-verge-service-ipc')
   const tempArchive = path.join(tempDir, archiveFile)
@@ -685,18 +562,7 @@ async function resolveServiceBundle() {
 
   try {
     await downloadFile(downloadURL, tempArchive)
-
-    if (platform === 'win32') {
-      const zip = new AdmZip(tempArchive)
-      zip
-        .getEntries()
-        .forEach((entry) =>
-          log_debug('"clash-verge-service-ipc" entry:', entry.entryName),
-        )
-      zip.extractAllTo(tempDir, true)
-    } else {
-      await extract({ cwd: tempDir, file: tempArchive })
-    }
+    await extract({ cwd: tempDir, file: tempArchive })
 
     for (const { sourceFile, targetFile, targetPath } of files) {
       const extractedFile = await findExtractedFile(tempDir, sourceFile)
@@ -705,7 +571,7 @@ async function resolveServiceBundle() {
       }
 
       await fsp.copyFile(extractedFile, targetPath)
-      if (platform !== 'win32') await fsp.chmod(targetPath, 0o755)
+      await fsp.chmod(targetPath, 0o755)
       await updateHashCache(targetPath)
       log_success(`Extracted service file: ${targetFile}`)
     }
@@ -731,12 +597,6 @@ const resolveGeoIP = () =>
     file: 'geoip.dat',
     downloadURL: `https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat`,
   })
-const resolveEnableLoopback = () =>
-  resolveResource({
-    file: 'enableLoopback.exe',
-    downloadURL: `https://github.com/Kuingsmile/uwp-tool/releases/download/latest/enableLoopback.exe`,
-  })
-
 const resolveSetDnsScript = () =>
   resolveResource({
     file: 'set_dns.sh',
@@ -780,23 +640,11 @@ const tasks = [
     },
     retry: 5,
   },
-  { name: 'plugin', func: resolvePlugin, retry: 5, winOnly: true },
   { name: 'service', func: resolveServiceBundle, retry: 5 },
   { name: 'mmdb', func: resolveMmdb, retry: 5 },
   { name: 'geosite', func: resolveGeosite, retry: 5 },
   { name: 'geoip', func: resolveGeoIP, retry: 5 },
-  {
-    name: 'enableLoopback',
-    func: resolveEnableLoopback,
-    retry: 5,
-    winOnly: true,
-  },
-  {
-    name: 'service_chmod',
-    func: resolveServicePermission,
-    retry: 5,
-    unixOnly: platform === 'linux' || platform === 'darwin',
-  },
+  { name: 'service_chmod', func: resolveServicePermission, retry: 5 },
   {
     name: 'set_dns_script',
     func: resolveSetDnsScript,
@@ -814,10 +662,7 @@ const tasks = [
 async function runTask() {
   const task = tasks.shift()
   if (!task) return
-  if (task.unixOnly && platform === 'win32') return runTask()
-  if (task.winOnly && platform !== 'win32') return runTask()
   if (task.macosOnly && platform !== 'darwin') return runTask()
-  if (task.linuxOnly && platform !== 'linux') return runTask()
 
   for (let i = 0; i < task.retry; i++) {
     try {
