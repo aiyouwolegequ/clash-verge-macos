@@ -27,7 +27,12 @@ pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
         Url::parse(param_str).map_err(|e| anyhow::anyhow!("failed to parse deep link: {:?}, param: {:?}", e, param))?;
 
     let Some((url, name)) = extract_subscription_info(&link_parsed) else {
-        logging!(error, Type::Config, "missing url parameter in deep link: {}", mask_err(param_str));
+        logging!(
+            error,
+            Type::Config,
+            "missing url parameter in deep link: {}",
+            mask_err(param_str)
+        );
         return Ok(());
     };
 
@@ -88,7 +93,12 @@ async fn import_subscription(url: &str, name: Option<&String>) {
 
     let uid = item.uid.clone().unwrap_or_default();
     if let Err(e) = profiles::profiles_append_item_safe(&mut item).await {
-        logging!(error, Type::Config, "failed to import subscription: {}", mask_err(&e.to_string()));
+        logging!(
+            error,
+            Type::Config,
+            "failed to import subscription: {}",
+            mask_err(&e.to_string())
+        );
         Config::profiles().await.discard();
         handle::Handle::notice_message("import_sub_url::error", mask_err(&e.to_string()));
         return;
@@ -108,7 +118,12 @@ async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem>
     match PrfItem::from_url(url, name, None, None).await {
         Ok(item) => Some(item),
         Err(e) => {
-            logging!(error, Type::Config, "failed to parse profile: {}", mask_err(&e.to_string()));
+            logging!(
+                error,
+                Type::Config,
+                "failed to parse profile: {}",
+                mask_err(&e.to_string())
+            );
             handle::Handle::notice_message("import_sub_url::error", mask_err(&e.to_string()));
             None
         }

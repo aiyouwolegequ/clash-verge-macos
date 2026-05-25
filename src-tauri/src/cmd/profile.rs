@@ -69,7 +69,12 @@ pub async fn import_profile(url: std::string::String, option: Option<PrfOption>)
             it
         }
         Err(e) => {
-            logging!(error, Type::Cmd, "[导入订阅] 下载失败: {}", help::mask_err(&e.to_string()));
+            logging!(
+                error,
+                Type::Cmd,
+                "[导入订阅] 下载失败: {}",
+                help::mask_err(&e.to_string())
+            );
             return Err(format!("导入订阅失败: {}", help::mask_err(&e.to_string())).into());
         }
     };
