@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::Result;
 use percent_encoding::percent_decode_str;
 use smartstring::alias::String;
@@ -8,13 +6,11 @@ use tauri::Url;
 use crate::{
     config::{Config, PrfItem, profiles},
     core::{CoreManager, handle},
-    utils::help::mask_err,
+    utils::help,
 };
 use clash_verge_logging::{Type, logging, logging_error};
 
 pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
-    logging!(info, Type::Config, "received deep link: {}", mask_err(param));
-
     let param_str = if param.starts_with("[") && param.len() > 4 {
         param
             .get(2..param.len() - 2)
@@ -22,16 +18,18 @@ pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
     } else {
         param
     };
+    let masked_deep_link = help::mask_url(param_str);
 
-    let link_parsed =
-        Url::parse(param_str).map_err(|e| anyhow::anyhow!("failed to parse deep link: {:?}, param: {:?}", e, param))?;
+    logging!(debug, Type::Config, "received deep link: {masked_deep_link}");
+
+    let link_parsed = Url::parse(param_str)
+        .map_err(|e| anyhow::anyhow!("failed to parse deep link: {e:?}, param: {masked_deep_link}"))?;
 
     let Some((url, name)) = extract_subscription_info(&link_parsed) else {
         logging!(
-            error,
+            warn,
             Type::Config,
-            "missing url parameter in deep link: {}",
-            mask_err(param_str)
+            "missing url parameter in deep link: {masked_deep_link}"
         );
         return Ok(());
     };
@@ -93,14 +91,9 @@ async fn import_subscription(url: &str, name: Option<&String>) {
 
     let uid = item.uid.clone().unwrap_or_default();
     if let Err(e) = profiles::profiles_append_item_safe(&mut item).await {
-        logging!(
-            error,
-            Type::Config,
-            "failed to import subscription: {}",
-            mask_err(&e.to_string())
-        );
+        logging!(error, Type::Config, "failed to import subscription url: {:?}", e);
         Config::profiles().await.discard();
-        handle::Handle::notice_message("import_sub_url::error", mask_err(&e.to_string()));
+        handle::Handle::notice_message("import_sub_url::error", e.to_string());
         return;
     }
 
@@ -118,13 +111,8 @@ async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem>
     match PrfItem::from_url(url, name, None, None).await {
         Ok(item) => Some(item),
         Err(e) => {
-            logging!(
-                error,
-                Type::Config,
-                "failed to parse profile: {}",
-                mask_err(&e.to_string())
-            );
-            handle::Handle::notice_message("import_sub_url::error", mask_err(&e.to_string()));
+            logging!(error, Type::Config, "failed to parse profile from url: {:?}", e);
+            handle::Handle::notice_message("import_sub_url::error", e.to_string());
             None
         }
     }
@@ -133,7 +121,6 @@ async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem>
 async fn post_import_updates(uid: &String, had_current_profile: bool) {
     handle::Handle::refresh_verge();
     handle::Handle::notify_profile_changed(uid);
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     let should_update_core = if uid.is_empty() || had_current_profile {
         false
@@ -141,7 +128,6 @@ async fn post_import_updates(uid: &String, had_current_profile: bool) {
         let profiles = Config::profiles().await;
         profiles.latest_arc().is_current_profile_index(uid)
     };
-    handle::Handle::notify_profile_changed(uid);
 
     if should_update_core {
         refresh_core_config().await;
