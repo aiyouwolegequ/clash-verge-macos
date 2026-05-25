@@ -21,7 +21,6 @@ use anyhow::Result;
 use clash_verge_logging::{Type, logging};
 use once_cell::sync::OnceCell;
 use tauri::{AppHandle, Manager as _};
-#[cfg(target_os = "macos")]
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_deep_link::DeepLinkExt as _;
 use tauri_plugin_mihomo::RejectPolicy;
@@ -82,12 +81,6 @@ mod app_init {
 
     /// Setup deep link handling
     pub fn setup_deep_links(app: &tauri::App) {
-        #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
-        {
-            logging!(info, Type::Setup, "注册深层链接...");
-            let _ = app.deep_link().register_all();
-        }
-
         app.deep_link().on_open_url(|event| {
             let urls = event.urls();
             AsyncHandler::spawn(move || async move {
@@ -102,17 +95,9 @@ mod app_init {
 
     /// Setup autostart plugin
     pub fn setup_autostart(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-        #[cfg(target_os = "macos")]
-        let mut auto_start_plugin_builder = tauri_plugin_autostart::Builder::new();
-        #[cfg(not(target_os = "macos"))]
-        let auto_start_plugin_builder = tauri_plugin_autostart::Builder::new();
-
-        #[cfg(target_os = "macos")]
-        {
-            auto_start_plugin_builder = auto_start_plugin_builder
-                .macos_launcher(MacosLauncher::LaunchAgent)
-                .app_name(&app.config().identifier);
-        }
+        let auto_start_plugin_builder = tauri_plugin_autostart::Builder::new()
+            .macos_launcher(MacosLauncher::LaunchAgent)
+            .app_name(&app.config().identifier);
         app.handle().plugin(auto_start_plugin_builder.build())?;
         Ok(())
     }
@@ -169,7 +154,6 @@ mod app_init {
             cmd::get_runtime_logs,
             cmd::get_runtime_proxy_chain_config,
             cmd::update_proxy_chain_config_in_runtime,
-            cmd::invoke_uwp_tool,
             cmd::copy_clash_env,
             cmd::sync_tray_proxy_selection,
             cmd::save_dns_config,
@@ -230,9 +214,6 @@ pub fn run() {
         return;
     }
 
-    #[cfg(target_os = "linux")]
-    utils::linux::workarounds::apply_nvidia_dmabuf_renderer_workaround();
-
     let _ = utils::dirs::init_portable_flag();
 
     let builder = app_init::setup_plugins(tauri::Builder::default())
@@ -265,7 +246,6 @@ pub fn run() {
         .invoke_handler(app_init::generate_handlers());
 
     mod event_handlers {
-        #[cfg(target_os = "macos")]
         use crate::module::lightweight;
         use crate::utils::window_manager::WindowManager;
         use crate::{
@@ -274,9 +254,7 @@ pub fn run() {
             process::AsyncHandler,
         };
         use clash_verge_logging::{Type, logging};
-        use tauri::AppHandle;
-        #[cfg(target_os = "macos")]
-        use tauri::Manager as _;
+        use tauri::{AppHandle, Manager as _};
 
         pub fn handle_ready_resumed(_app_handle: &AppHandle) {
             if handle::Handle::global().is_exiting() {
@@ -286,13 +264,11 @@ pub fn run() {
 
             logging!(info, Type::System, "应用就绪");
 
-            #[cfg(target_os = "macos")]
             if let Some(window) = _app_handle.get_webview_window("main") {
                 let _ = window.set_title("Clash Verge");
             }
         }
 
-        #[cfg(target_os = "macos")]
         pub async fn handle_reopen(has_visible_windows: bool) {
             if lightweight::is_in_lightweight_mode() {
                 lightweight::exit_lightweight_mode().await;
@@ -306,7 +282,6 @@ pub fn run() {
         }
 
         pub fn handle_window_close(api: &tauri::WindowEvent) {
-            #[cfg(target_os = "macos")]
             handle::Handle::global().set_activation_policy_accessory();
 
             if core::handle::Handle::global().is_exiting() {
@@ -326,7 +301,6 @@ pub fn run() {
                 let is_enable_global_hotkey = Config::verge().await.data_arc().enable_global_hotkey.unwrap_or(true);
 
                 if focused {
-                    #[cfg(target_os = "macos")]
                     {
                         use crate::core::hotkey::SystemHotkey;
                         let _ = hotkey::Hotkey::global()
@@ -342,7 +316,6 @@ pub fn run() {
                     return;
                 }
 
-                #[cfg(target_os = "macos")]
                 {
                     use crate::core::hotkey::SystemHotkey;
                     let _ = hotkey::Hotkey::global().unregister_system_hotkey(SystemHotkey::CmdQ);
@@ -355,7 +328,6 @@ pub fn run() {
             });
         }
 
-        #[cfg(target_os = "macos")]
         pub fn handle_window_destroyed() {
             use crate::core::hotkey::SystemHotkey;
             AsyncHandler::spawn(move || async move {
@@ -390,7 +362,6 @@ pub fn run() {
             }
             event_handlers::handle_ready_resumed(app_handle);
         }
-        #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen {
             has_visible_windows, ..
         } => {
@@ -426,7 +397,6 @@ pub fn run() {
             tauri::WindowEvent::Focused(focused) => {
                 event_handlers::handle_window_focus(focused);
             }
-            #[cfg(target_os = "macos")]
             tauri::WindowEvent::Destroyed => {
                 event_handlers::handle_window_destroyed();
             }

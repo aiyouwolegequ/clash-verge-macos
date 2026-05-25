@@ -3,7 +3,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use clash_verge_logging::{Type, logging};
 use once_cell::sync::OnceCell;
-#[cfg(unix)]
 use std::iter;
 use std::{fs, path::PathBuf};
 use tauri::Manager as _;
