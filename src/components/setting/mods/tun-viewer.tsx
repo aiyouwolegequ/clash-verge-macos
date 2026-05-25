@@ -15,19 +15,15 @@ import { useTranslation } from 'react-i18next'
 import {
   BaseDialog,
   BaseSplitChipEditor,
-  TooltipIcon,
   DialogRef,
   Switch,
 } from '@/components/base'
 import { useClash } from '@/hooks/use-clash'
 import { enhanceProfiles } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
-import getSystem from '@/utils/get-system'
 import { areValidIpCidrs } from '@/utils/network'
 
 import { StackModeSwitch } from './stack-mode-switch'
-
-const OS = getSystem()
 
 const splitRouteExcludeAddress = (value: string) =>
   value
@@ -43,7 +39,7 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
   const [open, setOpen] = useState(false)
   const [values, setValues] = useState({
     stack: 'mixed',
-    device: OS === 'macos' ? 'utun1024' : 'Mihomo',
+    device: 'utun1024',
     autoRoute: true,
     routeExcludeAddress: '',
     autoRedirect: false,
@@ -68,17 +64,14 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
     open: () => {
       setOpen(true)
       const nextAutoRoute = clash?.tun['auto-route'] ?? true
-      const rawAutoRedirect = clash?.tun['auto-redirect'] ?? false
-      const computedAutoRedirect =
-        OS === 'linux' ? (nextAutoRoute ? rawAutoRedirect : false) : false
       setValues({
         stack: clash?.tun.stack ?? 'gvisor',
-        device: clash?.tun.device ?? (OS === 'macos' ? 'utun1024' : 'Mihomo'),
+        device: clash?.tun.device ?? 'utun1024',
         autoRoute: nextAutoRoute,
         routeExcludeAddress: (clash?.tun['route-exclude-address'] ?? []).join(
           ',',
         ),
-        autoRedirect: computedAutoRedirect,
+        autoRedirect: false,
         autoDetectInterface: clash?.tun['auto-detect-interface'] ?? true,
         dnsHijack: clash?.tun['dns-hijack'] ?? ['any:53'],
         strictRoute: clash?.tun['strict-route'] ?? false,
@@ -101,19 +94,9 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
 
       const tun: IConfigData['tun'] = {
         stack: values.stack,
-        device:
-          values.device === ''
-            ? OS === 'macos'
-              ? 'utun1024'
-              : 'Mihomo'
-            : values.device,
+        device: values.device === '' ? 'utun1024' : values.device,
         'auto-route': values.autoRoute,
         'route-exclude-address': routeExcludeAddress,
-        ...(OS === 'linux'
-          ? {
-              'auto-redirect': values.autoRedirect,
-            }
-          : {}),
         'auto-detect-interface': values.autoDetectInterface,
         'dns-hijack': values.dnsHijack[0] === '' ? [] : values.dnsHijack,
         'strict-route': values.strictRoute,
@@ -149,13 +132,8 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
             onClick={async () => {
               const tun: IConfigData['tun'] = {
                 stack: 'gvisor',
-                device: OS === 'macos' ? 'utun1024' : 'Mihomo',
+                device: 'utun1024',
                 'auto-route': true,
-                ...(OS === 'linux'
-                  ? {
-                      'auto-redirect': false,
-                    }
-                  : {}),
                 'auto-detect-interface': true,
                 'dns-hijack': ['any:53'],
                 'route-exclude-address': [],
@@ -164,7 +142,7 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
               }
               setValues({
                 stack: 'gvisor',
-                device: OS === 'macos' ? 'utun1024' : 'Mihomo',
+                device: 'utun1024',
                 autoRoute: true,
                 routeExcludeAddress: '',
                 autoRedirect: false,
@@ -239,31 +217,6 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
             }
           />
         </ListItem>
-
-        {OS === 'linux' && (
-          <ListItem sx={{ padding: '5px 2px' }}>
-            <ListItemText
-              primary={t('settings.modals.tun.fields.autoRedirect')}
-              sx={{ maxWidth: 'fit-content' }}
-            />
-            <TooltipIcon
-              title={t('settings.modals.tun.tooltips.autoRedirect')}
-              sx={{ opacity: values.autoRoute ? 0.7 : 0.3 }}
-            />
-            <Switch
-              edge="end"
-              checked={values.autoRedirect}
-              onChange={(_, c) =>
-                setValues((v) => ({
-                  ...v,
-                  autoRedirect: v.autoRoute ? c : v.autoRedirect,
-                }))
-              }
-              disabled={!values.autoRoute}
-              sx={{ marginLeft: 'auto' }}
-            />
-          </ListItem>
-        )}
 
         <ListItem sx={{ padding: '5px 2px' }}>
           <ListItemText primary={t('settings.modals.tun.fields.strictRoute')} />

@@ -17,10 +17,6 @@ import { useClashInfo } from '@/hooks/use-clash'
 import { useVerge } from '@/hooks/use-verge'
 import { isPortInUse } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
-import getSystem from '@/utils/get-system'
-
-const OS = getSystem()
-
 interface ClashPortViewerRef {
   open: () => void
   close: () => void
@@ -335,77 +331,39 @@ export const ClashPortViewer = forwardRef<ClashPortViewerRef>((_, ref) => {
           </div>
         </ListItem>
 
-        {OS !== 'windows' && (
-          <ListItem sx={{ padding: '4px 0', minHeight: 36 }}>
-            <ListItemText
-              primary={t('settings.modals.clashPort.fields.redir')}
-              slotProps={{ primary: { sx: { fontSize: 12 } } }}
+        <ListItem sx={{ padding: '4px 0', minHeight: 36 }}>
+          <ListItemText
+            primary={t('settings.modals.clashPort.fields.redir')}
+            slotProps={{ primary: { sx: { fontSize: 12 } } }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <TextField
+              size="small"
+              sx={{ width: 80, mr: 0.5, fontSize: 12 }}
+              value={redirPort}
+              onChange={(e) =>
+                setRedirPort(+e.target.value?.replace(/\D+/, '').slice(0, 5))
+              }
+              disabled={!redirEnabled}
+              slotProps={{ htmlInput: { style: { fontSize: 12 } } }}
             />
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <TextField
-                size="small"
-                sx={{ width: 80, mr: 0.5, fontSize: 12 }}
-                value={redirPort}
-                onChange={(e) =>
-                  setRedirPort(+e.target.value?.replace(/\D+/, '').slice(0, 5))
-                }
-                disabled={!redirEnabled}
-                slotProps={{ htmlInput: { style: { fontSize: 12 } } }}
-              />
-              <IconButton
-                size="small"
-                onClick={() => setRedirPort(generateRandomPort())}
-                title={t('settings.modals.clashPort.actions.random')}
-                disabled={!redirEnabled}
-                sx={{ mr: 0.5 }}
-              >
-                <Shuffle fontSize="small" />
-              </IconButton>
-              <Switch
-                size="small"
-                checked={redirEnabled}
-                onChange={(_, c) => setRedirEnabled(c)}
-                sx={{ ml: 0.5 }}
-              />
-            </div>
-          </ListItem>
-        )}
-
-        {OS === 'linux' && (
-          <ListItem sx={{ padding: '4px 0', minHeight: 36 }}>
-            <ListItemText
-              primary={t('settings.modals.clashPort.fields.tproxy')}
-              slotProps={{ primary: { sx: { fontSize: 12 } } }}
+            <IconButton
+              size="small"
+              onClick={() => setRedirPort(generateRandomPort())}
+              title={t('settings.modals.clashPort.actions.random')}
+              disabled={!redirEnabled}
+              sx={{ mr: 0.5 }}
+            >
+              <Shuffle fontSize="small" />
+            </IconButton>
+            <Switch
+              size="small"
+              checked={redirEnabled}
+              onChange={(_, c) => setRedirEnabled(c)}
+              sx={{ ml: 0.5 }}
             />
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <TextField
-                size="small"
-                sx={{ width: 80, mr: 0.5, fontSize: 12 }}
-                value={tproxyPort}
-                onChange={(e) =>
-                  setTproxyPort(+e.target.value?.replace(/\D+/, '').slice(0, 5))
-                }
-                disabled={!tproxyEnabled}
-                slotProps={{ htmlInput: { style: { fontSize: 12 } } }}
-              />
-              <IconButton
-                size="small"
-                onClick={() => setTproxyPort(generateRandomPort())}
-                title={t('settings.modals.clashPort.actions.random')}
-                disabled={!tproxyEnabled}
-                sx={{ mr: 0.5 }}
-              >
-                <Shuffle fontSize="small" />
-              </IconButton>
-              <Switch
-                size="small"
-                checked={tproxyEnabled}
-                onChange={(_, c) => setTproxyEnabled(c)}
-                sx={{ ml: 0.5 }}
-              />
-            </div>
-          </ListItem>
-        )}
+          </div>
+        </ListItem>
       </List>
     </BaseDialog>
   )

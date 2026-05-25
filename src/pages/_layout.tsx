@@ -285,27 +285,7 @@ const Layout = () => {
           borderTopLeftRadius: '0px',
           borderTopRightRadius: '0px',
         }}
-        onContextMenu={(e) => {
-          if (
-            OS === 'windows' &&
-            !['input', 'textarea'].includes(
-              e.currentTarget.tagName.toLowerCase(),
-            ) &&
-            !e.currentTarget.isContentEditable
-          ) {
-            e.preventDefault()
-          }
-        }}
-        sx={[
-          ({ palette }) => ({ bgcolor: palette.background.paper }),
-          OS === 'linux'
-            ? {
-                borderRadius: '8px',
-                width: '100vw',
-                height: '100vh',
-              }
-            : {},
-        ]}
+        sx={[({ palette }) => ({ bgcolor: palette.background.paper })]}
       >
         {/* Custom titlebar - rendered only when decorated is false, memoized for performance */}
         {customTitlebar}

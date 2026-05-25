@@ -10,7 +10,6 @@ import { navItems } from '@/pages/_routers'
 import { copyClashEnv } from '@/services/cmds'
 import { supportedLanguages } from '@/services/i18n'
 import { showNotice } from '@/services/notice-service'
-import getSystem from '@/utils/get-system'
 
 import { BackupViewer } from './mods/backup-viewer'
 import { ConfigViewer } from './mods/config-viewer'
@@ -26,8 +25,6 @@ import { UpdateViewer } from './mods/update-viewer'
 interface Props {
   onError?: (err: Error) => void
 }
-
-const OS = getSystem()
 
 const languageOptions = supportedLanguages.map((code) => {
   const labels: { [key: string]: string } = {
@@ -119,39 +116,35 @@ const SettingVergeBasic = ({ onError }: Props) => {
         </GuardState>
       </SettingItem>
 
-      {OS !== 'linux' && (
-        <SettingItem
-          label={t('settings.components.verge.basic.fields.trayClickEvent')}
+      <SettingItem
+        label={t('settings.components.verge.basic.fields.trayClickEvent')}
+      >
+        <GuardState
+          value={tray_event ?? 'main_window'}
+          onCatch={onError}
+          onFormat={(e: any) => e.target.value}
+          onChange={(e) => onChangeData({ tray_event: e })}
+          onGuard={(e) => patchVerge({ tray_event: e })}
         >
-          <GuardState
-            value={tray_event ?? 'main_window'}
-            onCatch={onError}
-            onFormat={(e: any) => e.target.value}
-            onChange={(e) => onChangeData({ tray_event: e })}
-            onGuard={(e) => patchVerge({ tray_event: e })}
-          >
-            <Select size="small" sx={{ width: 140, '> div': { py: '7.5px' } }}>
-              <MenuItem value="main_window">
-                {t(
-                  'settings.components.verge.basic.trayOptions.showMainWindow',
-                )}
-              </MenuItem>
-              <MenuItem value="tray_menu">
-                {t('settings.components.verge.basic.trayOptions.showTrayMenu')}
-              </MenuItem>
-              <MenuItem value="system_proxy">
-                {t('settings.sections.system.toggles.systemProxy')}
-              </MenuItem>
-              <MenuItem value="tun_mode">
-                {t('settings.sections.system.toggles.tunMode')}
-              </MenuItem>
-              <MenuItem value="disable">
-                {t('settings.components.verge.basic.trayOptions.disable')}
-              </MenuItem>
-            </Select>
-          </GuardState>
-        </SettingItem>
-      )}
+          <Select size="small" sx={{ width: 140, '> div': { py: '7.5px' } }}>
+            <MenuItem value="main_window">
+              {t('settings.components.verge.basic.trayOptions.showMainWindow')}
+            </MenuItem>
+            <MenuItem value="tray_menu">
+              {t('settings.components.verge.basic.trayOptions.showTrayMenu')}
+            </MenuItem>
+            <MenuItem value="system_proxy">
+              {t('settings.sections.system.toggles.systemProxy')}
+            </MenuItem>
+            <MenuItem value="tun_mode">
+              {t('settings.sections.system.toggles.tunMode')}
+            </MenuItem>
+            <MenuItem value="disable">
+              {t('settings.components.verge.basic.trayOptions.disable')}
+            </MenuItem>
+          </Select>
+        </GuardState>
+      </SettingItem>
 
       <SettingItem
         label={t('settings.components.verge.basic.fields.copyEnvType')}
@@ -160,7 +153,7 @@ const SettingVergeBasic = ({ onError }: Props) => {
         }
       >
         <GuardState
-          value={env_type ?? (OS === 'windows' ? 'powershell' : 'bash')}
+          value={env_type ?? 'bash'}
           onCatch={onError}
           onFormat={(e: any) => e.target.value}
           onChange={(e) => onChangeData({ env_type: e })}
