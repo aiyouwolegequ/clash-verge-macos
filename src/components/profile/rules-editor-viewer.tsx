@@ -802,9 +802,8 @@ export const RulesEditorViewer = (props: Props) => {
               padding: {
                 top: 33, // 顶部padding防止遮挡snippets
               },
-              fontFamily: `Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"${
-                getSystem() === 'windows' ? ', twemoji mozilla' : ''
-              }`,
+              fontFamily:
+                'Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"',
               fontLigatures: false, // 连字符
               smoothScrolling: true, // 平滑滚动
             }}

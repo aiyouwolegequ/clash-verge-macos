@@ -56,7 +56,6 @@ import {
 import { showNotice } from '@/services/notice-service'
 import { useThemeMode } from '@/services/states'
 import type { TranslationKey } from '@/types/generated/i18n-keys'
-import getSystem from '@/utils/get-system'
 
 interface Props {
   proxiesUid: string
@@ -1136,9 +1135,8 @@ export const GroupsEditorViewer = (props: Props) => {
               padding: {
                 top: 33, // 顶部padding防止遮挡snippets
               },
-              fontFamily: `Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"${
-                getSystem() === 'windows' ? ', twemoji mozilla' : ''
-              }`,
+              fontFamily:
+                'Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"',
               fontLigatures: false, // 连字符
               smoothScrolling: true, // 平滑滚动
             }}

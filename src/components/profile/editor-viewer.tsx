@@ -25,7 +25,6 @@ import { beforeEditorMount } from '@/services/monaco'
 import { showNotice } from '@/services/notice-service'
 import { useThemeMode } from '@/services/states'
 import debounce from '@/utils/debounce'
-import getSystem from '@/utils/get-system'
 
 const appWindow = getCurrentWebviewWindow()
 
@@ -247,9 +246,8 @@ export const EditorViewer = ({
                 padding: {
                   top: 33,
                 },
-                fontFamily: `Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"${
-                  getSystem() === 'windows' ? ', twemoji mozilla' : ''
-                }`,
+                fontFamily:
+                  'Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"',
                 fontLigatures: false,
                 smoothScrolling: true,
               }}

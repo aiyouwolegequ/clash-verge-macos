@@ -33,7 +33,6 @@ import { useClash } from '@/hooks/use-clash'
 import { showNotice } from '@/services/notice-service'
 import { useThemeMode } from '@/services/states'
 import { debugLog } from '@/utils/debug'
-import getSystem from '@/utils/get-system'
 
 const Item = styled(ListItem)(() => ({
   padding: '5px 2px',
@@ -1093,9 +1092,8 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
             padding: {
               top: 33,
             },
-            fontFamily: `Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"${
-              getSystem() === 'windows' ? ', twemoji mozilla' : ''
-            }`,
+            fontFamily:
+              'Fira Code, JetBrains Mono, Roboto Mono, "Source Code Pro", Consolas, Menlo, Monaco, monospace, "Courier New", "Apple Color Emoji"',
             fontLigatures: false,
             smoothScrolling: true,
           }}
