@@ -68,15 +68,13 @@ impl Config {
         let verge = Self::verge().await.latest_arc();
         clash_verge_i18n::sync_locale(verge.language.as_deref());
 
-        // init Tun mode
-        #[cfg(target_os = "macos")]
+        // init Tun mode: on macOS, TUN requires service helper with admin privileges.
+        // If neither is available, force-disable TUN to avoid startup errors.
+        // Check both IPC socket (runtime) and LaunchDaemon plist (persistent) to avoid
+        // race condition where socket hasn't been created yet at boot.
         {
             let handle = Handle::app_handle();
             let is_admin = is_current_app_handle_admin(handle);
-            // On macOS, TUN requires the service helper with admin privileges.
-            // If neither is available, force-disable TUN to avoid startup errors.
-            // Check both IPC socket (runtime) and LaunchDaemon plist (persistent)
-            // to avoid race condition where socket hasn't been created yet at boot.
             let service_installed = service::is_service_ipc_path_exists()
                 || std::path::Path::new(
                     "/Library/LaunchDaemons/io.github.clash-verge-rev.clash-verge-rev.service.plist",
@@ -90,24 +88,6 @@ impl Config {
                 });
                 verge.apply();
                 let _ = tray::Tray::global().update_menu().await;
-                let verge_data = Self::verge().await.latest_arc();
-                logging_error!(Type::Core, verge_data.save_file().await);
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let handle = Handle::app_handle();
-            let is_admin = is_current_app_handle_admin(handle);
-            let is_service_available = service::is_service_available().await.is_ok();
-            if !is_admin && !is_service_available {
-                let verge = Self::verge().await;
-                verge.edit_draft(|d| {
-                    d.enable_tun_mode = Some(false);
-                });
-                verge.apply();
-                let _ = tray::Tray::global().update_menu().await;
-
-                // 分离数据获取和异步调用避免Send问题
                 let verge_data = Self::verge().await.latest_arc();
                 logging_error!(Type::Core, verge_data.save_file().await);
             }

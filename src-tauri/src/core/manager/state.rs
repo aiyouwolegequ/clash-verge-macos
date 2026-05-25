@@ -25,9 +25,7 @@ impl CoreManager {
     pub(super) async fn start_core_by_sidecar(&self) -> Result<()> {
         logging!(info, Type::Core, "Starting core in sidecar mode");
 
-        // Kill any stale Mihomo processes (e.g. left by a previous service attempt)
-        // to free ports 7897 and 53 before starting the sidecar.
-        #[cfg(target_os = "macos")]
+        // Kill any stale Mihomo processes to free ports 7897 and 53 before starting.
         {
             use std::process::Command;
             let _ = Command::new("pkill").arg("-f").arg("verge-mihomo").output();
@@ -39,7 +37,6 @@ impl CoreManager {
         let clash_core = Config::verge().await.latest_arc().get_valid_clash_core();
         let config_dir = dirs::app_home_dir()?;
 
-        #[cfg(unix)]
         let previous_mask = unsafe { tauri_plugin_clash_verge_sysinfo::libc::umask(0o007) };
         let (mut rx, child) = app_handle
             .shell()
@@ -49,15 +46,10 @@ impl CoreManager {
                 dirs::path_to_str(&config_dir)?,
                 "-f",
                 dirs::path_to_str(&config_file)?,
-                if cfg!(windows) {
-                    "-ext-ctl-pipe"
-                } else {
-                    "-ext-ctl-unix"
-                },
+                "-ext-ctl-unix",
                 &IClashTemp::guard_external_controller_ipc(),
             ])
             .spawn()?;
-        #[cfg(unix)]
         unsafe {
             tauri_plugin_clash_verge_sysinfo::libc::umask(previous_mask)
         };

@@ -38,8 +38,6 @@ pub fn open_web_url(url: String) -> CmdResult<()> {
 #[tauri::command]
 pub async fn open_app_log() -> CmdResult<()> {
     let log_path = dirs::app_latest_log().stringify_err()?;
-    #[cfg(target_os = "windows")]
-    let log_path = crate::utils::help::snapshot_path(&log_path).stringify_err()?;
     open::that(log_path).stringify_err()
 }
 
@@ -48,8 +46,6 @@ pub async fn open_app_log() -> CmdResult<()> {
 #[tauri::command]
 pub async fn open_core_log() -> CmdResult<()> {
     let log_path = dirs::clash_latest_log().stringify_err()?;
-    #[cfg(target_os = "windows")]
-    let log_path = crate::utils::help::snapshot_path(&log_path).stringify_err()?;
     open::that(log_path).stringify_err()
 }
 
@@ -99,44 +95,37 @@ pub struct MacAppInfo {
 
 #[tauri::command]
 pub async fn get_macos_apps() -> CmdResult<Vec<MacAppInfo>> {
-    #[cfg(target_os = "macos")]
-    {
-        let mut apps = Vec::new();
-        if let Ok(entries) = std::fs::read_dir("/Applications") {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("app")
-                    && let Some(name) = path.file_stem().and_then(|s| s.to_str())
-                {
-                    apps.push(MacAppInfo {
-                        name: name.to_string().into(),
-                        path: path.to_string_lossy().to_string().into(),
-                    });
-                }
+    let mut apps = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/Applications") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("app")
+                && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+            {
+                apps.push(MacAppInfo {
+                    name: name.to_string().into(),
+                    path: path.to_string_lossy().to_string().into(),
+                });
             }
         }
-        if let Ok(home) = std::env::var("HOME")
-            && let Ok(entries) = std::fs::read_dir(format!("{}/Applications", home))
-        {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("app")
-                    && let Some(name) = path.file_stem().and_then(|s| s.to_str())
-                {
-                    apps.push(MacAppInfo {
-                        name: name.to_string().into(),
-                        path: path.to_string_lossy().to_string().into(),
-                    });
-                }
+    }
+    if let Ok(home) = std::env::var("HOME")
+        && let Ok(entries) = std::fs::read_dir(format!("{}/Applications", home))
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("app")
+                && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+            {
+                apps.push(MacAppInfo {
+                    name: name.to_string().into(),
+                    path: path.to_string_lossy().to_string().into(),
+                });
             }
         }
-        apps.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(apps)
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Ok(vec![])
-    }
+    apps.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(apps)
 }
 
 /// Refresh macOS exclude apps executables

@@ -77,9 +77,6 @@ impl CoreManager {
     /// - 如果服务不可用，回退到 Sidecar 模式
     /// - macOS 上额外的 TUN 特判：TUN 开启时会更积极地初始化服务
     async fn prepare_startup(&self) -> Result<()> {
-        #[cfg(target_os = "windows")]
-        self.wait_for_service_if_needed().await;
-
         let mut manager = SERVICE_MANAGER.lock().await;
         let current = manager.current();
 
@@ -99,8 +96,7 @@ impl CoreManager {
             }
         }
 
-        // macOS 特判：TUN 开启时额外尝试等待服务启动
-        #[cfg(target_os = "macos")]
+        // TUN 开启时额外尝试等待服务启动
         {
             let needs_tun = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
             if needs_tun && !matches!(manager.current(), ServiceStatus::Ready) {

@@ -75,7 +75,10 @@ impl IClashTemp {
             "external-controller".into(),
             network::DEFAULT_EXTERNAL_CONTROLLER.into(),
         );
-        map.insert("external-controller-unix".into(), Self::guard_external_controller_ipc().into());
+        map.insert(
+            "external-controller-unix".into(),
+            Self::guard_external_controller_ipc().into(),
+        );
         cors_map.insert(
             "allow-origins".into(),
             vec![
@@ -109,7 +112,10 @@ impl IClashTemp {
         config.insert("port".into(), port.into());
         config.insert("external-controller".into(), ctrl.into());
 
-        config.insert("external-controller-unix".into(), Self::guard_external_controller_ipc().into());
+        config.insert(
+            "external-controller-unix".into(),
+            Self::guard_external_controller_ipc().into(),
+        );
         config
     }
 
