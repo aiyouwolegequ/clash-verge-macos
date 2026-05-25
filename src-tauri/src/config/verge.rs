@@ -525,7 +525,6 @@ impl IVerge {
         patch!(webdav_url);
         patch!(webdav_username);
         patch!(webdav_password);
-        #[cfg(target_os = "macos")]
         patch!(enable_tray_speed);
         // patch!(enable_tray_icon);
         patch!(tray_proxy_groups_display_mode);
