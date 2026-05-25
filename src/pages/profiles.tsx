@@ -292,13 +292,17 @@ const ProfilePage = () => {
       setUrl('')
       await performRobustRefresh()
     }
-
     try {
       // 尝试正常导入
       await importProfile(url)
       await handleImportSuccess('shared.feedback.notifications.importSuccess')
     } catch (initialErr) {
       console.warn('[订阅导入] 首次导入失败:', initialErr)
+
+      if (String(initialErr).toLowerCase().includes('legacy tls')) {
+        showNotice.error(String(initialErr))
+        return
+      }
 
       showNotice.info('profiles.page.feedback.notifications.importRetry')
       try {

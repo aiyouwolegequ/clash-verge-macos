@@ -24,6 +24,14 @@ use std::time::Duration;
 
 static CURRENT_SWITCHING_PROFILE: AtomicBool = AtomicBool::new(false);
 
+fn profile_import_error(err: &anyhow::Error) -> std::string::String {
+    if let Some(cause) = err.chain().find(|cause| cause.to_string().contains("TLS 1.0/1.1")) {
+        return cause.to_string();
+    }
+
+    format!("导入订阅失败: {err:#}")
+}
+
 #[tauri::command]
 pub async fn get_profiles() -> CmdResult<SharedDraft<IProfiles>> {
     logging!(debug, Type::Cmd, "获取配置文件列表");
@@ -69,13 +77,8 @@ pub async fn import_profile(url: std::string::String, option: Option<PrfOption>)
             it
         }
         Err(e) => {
-            logging!(
-                error,
-                Type::Cmd,
-                "[导入订阅] 下载失败: {}",
-                help::mask_err(&e.to_string())
-            );
-            return Err(format!("导入订阅失败: {}", help::mask_err(&e.to_string())).into());
+            logging!(error, Type::Cmd, "[导入订阅] 下载失败: {}", help::mask_err(&e.to_string()));
+            return Err(profile_import_error(&e).into());
         }
     };
 
