@@ -33,16 +33,7 @@ pub async fn check_singleton() -> Result<()> {
         #[allow(clippy::needless_collect)]
         let argvs: Vec<std::string::String> = std::env::args().collect();
         if argvs.len() > 1 {
-            #[cfg(not(target_os = "macos"))]
-            {
-                let param = argvs[1].as_str();
-                if param.starts_with("clash:") {
-                    client
-                        .get(format!("http://127.0.0.1:{port}/commands/scheme?param={param}"))
-                        .send()
-                        .await?;
-                }
-            }
+            // macOS handles deep-link schemes via the system framework (init_scheme), not CLI args
         } else {
             client
                 .get(format!("http://127.0.0.1:{port}/commands/visible"))

@@ -191,17 +191,9 @@ pub struct IVerge {
     pub auto_backup_on_change: Option<bool>,
 
     /// verge 的各种 port 用于覆盖 clash 的各种 port
-    #[cfg(not(target_os = "windows"))]
     pub verge_redir_port: Option<u16>,
 
-    #[cfg(not(target_os = "windows"))]
     pub verge_redir_enabled: Option<bool>,
-
-    #[cfg(target_os = "linux")]
-    pub verge_tproxy_port: Option<u16>,
-
-    #[cfg(target_os = "linux")]
-    pub verge_tproxy_enabled: Option<bool>,
 
     pub verge_mixed_port: Option<u16>,
 
@@ -392,10 +384,7 @@ impl IVerge {
             clash_core: Some("verge-mihomo".into()),
             language: Some(clash_verge_i18n::system_language().into()),
             theme_mode: Some("system".into()),
-            #[cfg(not(target_os = "windows"))]
             env_type: Some("bash".into()),
-            #[cfg(target_os = "windows")]
-            env_type: Some("powershell".into()),
             start_page: Some("/".into()),
             traffic_graph: Some(true),
             enable_memory_usage: Some(true),
@@ -418,10 +407,6 @@ impl IVerge {
             proxy_auto_config: Some(false),
             pac_file_content: Some(DEFAULT_PAC.into()),
             proxy_host: Some("127.0.0.1".into()),
-            #[cfg(target_os = "linux")]
-            verge_tproxy_port: Some(7896),
-            #[cfg(target_os = "linux")]
-            verge_tproxy_enabled: Some(false),
             verge_mixed_port: Some(7897),
             verge_socks_port: Some(7898),
             verge_socks_enabled: Some(false),
@@ -441,7 +426,6 @@ impl IVerge {
             webdav_url: None,
             webdav_username: None,
             webdav_password: None,
-            #[cfg(target_os = "macos")]
             enable_tray_speed: Some(false),
             // enable_tray_icon: Some(true),
             tray_proxy_groups_display_mode: Some("default".into()),

@@ -13,17 +13,10 @@ use clash_verge_logging::{Type, logging};
 
 static DB_CONN: Lazy<Arc<Mutex<Option<Connection>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
-#[cfg(target_os = "macos")]
 #[allow(clippy::type_complexity)]
 static LSOF_CACHE: Lazy<Arc<Mutex<HashMap<String, (String, String)>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
-#[cfg(not(target_os = "macos"))]
-async fn resolve_process_by_port(_port: &str) -> Option<(String, String)> {
-    None
-}
-
-#[cfg(target_os = "macos")]
 async fn resolve_process_by_port(port: &str) -> Option<(String, String)> {
     if port.is_empty() {
         return None;

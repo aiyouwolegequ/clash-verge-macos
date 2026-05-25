@@ -1,6 +1,5 @@
 use serde_yaml_ng::{Mapping, Value};
 
-#[cfg(target_os = "macos")]
 use crate::process::AsyncHandler;
 
 macro_rules! revise {
@@ -57,20 +56,16 @@ pub fn use_tun(mut config: Mapping, enable: bool) -> Mapping {
                 revise!(dns_val, "fake-ip-range", "198.18.0.1/16");
             }
 
-            #[cfg(target_os = "macos")]
-            {
-                AsyncHandler::spawn(move || async move {
-                    crate::utils::resolve::dns::restore_public_dns().await;
-                    crate::utils::resolve::dns::set_public_dns("114.114.114.114".to_string()).await;
-                });
-            }
+            AsyncHandler::spawn(move || async move {
+                crate::utils::resolve::dns::restore_public_dns().await;
+                crate::utils::resolve::dns::set_public_dns("114.114.114.114".to_string()).await;
+            });
         }
 
         // 当TUN启用时，将修改后的DNS配置写回
         revise!(config, "dns", dns_val);
     } else {
         // TUN未启用时，仅恢复系统DNS，不修改配置文件中的DNS设置
-        #[cfg(target_os = "macos")]
         AsyncHandler::spawn(move || async move {
             crate::utils::resolve::dns::restore_public_dns().await;
         });

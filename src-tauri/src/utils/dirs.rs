@@ -137,16 +137,9 @@ pub fn profiles_path() -> Result<PathBuf> {
     Ok(app_home_dir()?.join(PROFILE_YAML))
 }
 
-#[cfg(target_os = "macos")]
 pub fn service_path() -> Result<PathBuf> {
     let res_dir = app_resources_dir()?;
     Ok(res_dir.join("clash-verge-service"))
-}
-
-#[cfg(windows)]
-pub fn service_path() -> Result<PathBuf> {
-    let res_dir = app_resources_dir()?;
-    Ok(res_dir.join("clash-verge-service.exe"))
 }
 
 pub fn sidecar_log_dir() -> Result<PathBuf> {
@@ -200,7 +193,6 @@ pub fn get_encryption_key() -> Result<Vec<u8>> {
     }
 }
 
-#[cfg(unix)]
 pub fn ensure_mihomo_safe_dir() -> Option<PathBuf> {
     iter::once("/tmp")
         .map(PathBuf::from)
@@ -218,7 +210,6 @@ pub fn ensure_mihomo_safe_dir() -> Option<PathBuf> {
         })
 }
 
-#[cfg(unix)]
 pub fn ipc_path() -> Result<PathBuf> {
     ensure_mihomo_safe_dir()
         .map(|base_dir| base_dir.join("verge").join("verge-mihomo.sock"))
@@ -228,11 +219,6 @@ pub fn ipc_path() -> Result<PathBuf> {
                 .map(|dir| dir.join("verge").join("verge-mihomo.sock"))
         })
         .ok_or_else(|| anyhow::anyhow!("Failed to determine ipc path"))
-}
-
-#[cfg(target_os = "windows")]
-pub fn ipc_path() -> Result<PathBuf> {
-    Ok(PathBuf::from(r"\\.\pipe\verge-mihomo"))
 }
 #[async_trait]
 pub trait PathBufExec {

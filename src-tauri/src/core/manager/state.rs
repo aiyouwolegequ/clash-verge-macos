@@ -50,9 +50,7 @@ impl CoreManager {
                 &IClashTemp::guard_external_controller_ipc(),
             ])
             .spawn()?;
-        unsafe {
-            tauri_plugin_clash_verge_sysinfo::libc::umask(previous_mask)
-        };
+        unsafe { tauri_plugin_clash_verge_sysinfo::libc::umask(previous_mask) };
 
         let pid = child.pid();
         logging!(trace, Type::Core, "Sidecar started with PID: {}", pid);

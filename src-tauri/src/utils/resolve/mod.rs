@@ -86,11 +86,8 @@ pub async fn resolve_reset_async() -> Result<(), anyhow::Error> {
     sysopt::Sysopt::global().reset_sysproxy().await?;
     CoreManager::global().stop_core().await?;
 
-    #[cfg(target_os = "macos")]
-    {
-        use dns::restore_public_dns;
-        restore_public_dns().await;
-    }
+    use dns::restore_public_dns;
+    restore_public_dns().await;
 
     Ok(())
 }
@@ -134,13 +131,9 @@ pub(super) async fn init_auto_backup() {
     logging_error!(Type::Setup, AutoBackupManager::global().init().await);
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn init_mac_exclude_apps() {
     MacExcludeAppsManager::global().init();
 }
-
-#[cfg(not(target_os = "macos"))]
-pub(super) fn init_mac_exclude_apps() {}
 
 async fn init_silent_updater() {
     use crate::core::SilentUpdater;
@@ -227,7 +220,6 @@ pub(super) async fn refresh_tray_menu() {
 
 pub(super) async fn init_window() {
     let is_silent_start = Config::verge().await.data_arc().enable_silent_start.unwrap_or(false);
-    #[cfg(target_os = "macos")]
     if is_silent_start {
         use crate::core::handle::Handle;
         Handle::global().set_activation_policy_accessory();
