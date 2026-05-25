@@ -74,7 +74,6 @@ serde = { version = "1.0.228" }
 serde_json = { version = "1.0.149" }
 serde_yaml_ng = { version = "0.10.0" }
 bitflags = { version = "2.11.0" }
-deelevate = "0.2.0"
 
 [workspace.lints.clippy]
 correctness = { level = "deny", priority = -1 }
