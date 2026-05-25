@@ -34,7 +34,8 @@
 - 将 React 19 实验性 `use` hook 替换为稳定的 `useContext`，消除潜在的 hooks 计数不匹配问题（Minified React error #310）
 - 备份设置功能异常
 - macOS 托盘速率可能的样式错误
-- 订阅导入 TLS 1.0/1.1 等过旧协议时显示更明确错误原因
+- 修复 订阅导入 TLS 1.0/1.1 等过旧协议时显示更明确错误原因
+- 修复 gzip 压缩订阅响应被当作无效 YAML 导致导入失败的问题
 
 <details>
 <summary><strong> ✨ 新增功能 </strong></summary>
