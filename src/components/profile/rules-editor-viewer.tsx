@@ -50,7 +50,6 @@ import { showNotice } from '@/services/notice-service'
 import { useThemeMode } from '@/services/states'
 import type { TranslationKey } from '@/types/generated/i18n-keys'
 import type { MonacoEditorInstance } from '@/types/monaco'
-import getSystem from '@/utils/get-system'
 import { isValidIpCidr } from '@/utils/network'
 
 interface Props {
@@ -165,14 +164,11 @@ const rules: {
   },
   {
     name: 'PROCESS-NAME',
-    example: getSystem() === 'windows' ? 'chrome.exe' : 'curl',
+    example: 'curl',
   },
   {
     name: 'PROCESS-PATH',
-    example:
-      getSystem() === 'windows'
-        ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-        : '/usr/bin/wget',
+    example: '/usr/bin/wget',
   },
   {
     name: 'PROCESS-NAME-REGEX',
@@ -180,8 +176,7 @@ const rules: {
   },
   {
     name: 'PROCESS-PATH-REGEX',
-    example:
-      getSystem() === 'windows' ? '(?i).*Application\\chrome.*' : '.*bin/wget',
+    example: '.*bin/wget',
   },
   {
     name: 'NETWORK',
