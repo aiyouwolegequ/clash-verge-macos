@@ -11,10 +11,9 @@ use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{
-    NSAttributedStringNSStringDrawing as _, NSBaselineOffsetAttributeName, NSColor, NSFont,
-    NSFontAttributeName, NSFontWeightRegular, NSForegroundColorAttributeName, NSLineBreakMode,
-    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem,
-    NSTextAlignment,
+    NSAttributedStringNSStringDrawing as _, NSBaselineOffsetAttributeName, NSColor, NSFont, NSFontAttributeName,
+    NSFontWeightRegular, NSForegroundColorAttributeName, NSLineBreakMode, NSMutableParagraphStyle,
+    NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem, NSTextAlignment,
 };
 use objc2_foundation::{NSAttributedString, NSDictionary, NSNumber, NSString};
 
