@@ -619,14 +619,7 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
     .await;
 
     // merge default clash config
-    let config = merge_default_config(
-        config,
-        clash_config,
-        socks_enabled,
-        http_enabled,
-        redir_enabled,
-    )
-    .await;
+    let config = merge_default_config(config, clash_config, socks_enabled, http_enabled, redir_enabled).await;
 
     // builtin scripts
     let mut config = apply_builtin_scripts(config, clash_core, enable_builtin).await;

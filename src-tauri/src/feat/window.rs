@@ -96,9 +96,6 @@ pub async fn clean_async() -> bool {
             }
         }
 
-        #[cfg(target_os = "windows")]
-        let stop_timeout = Duration::from_secs(2);
-        #[cfg(not(target_os = "windows"))]
         let stop_timeout = Duration::from_secs(3);
 
         logging!(info, Type::System, "stop core");
@@ -118,9 +115,8 @@ pub async fn clean_async() -> bool {
         }
     });
 
-    // DNS恢复（仅macOS）
+    // DNS恢复
     let dns_task = tokio::task::spawn(async {
-        #[cfg(target_os = "macos")]
         match timeout(
             Duration::from_millis(1000),
             crate::utils::resolve::dns::restore_public_dns(),
@@ -136,8 +132,6 @@ pub async fn clean_async() -> bool {
                 false
             }
         }
-        #[cfg(not(target_os = "macos"))]
-        true
     });
 
     // 并行执行清理任务
