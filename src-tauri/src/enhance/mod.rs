@@ -33,10 +33,7 @@ struct ConfigValues {
     socks_enabled: bool,
     http_enabled: bool,
     enable_dns_settings: bool,
-    #[cfg(not(target_os = "windows"))]
     redir_enabled: bool,
-    #[cfg(target_os = "linux")]
-    tproxy_enabled: bool,
 }
 
 #[derive(Debug)]
@@ -117,11 +114,7 @@ async fn get_config_values() -> ConfigValues {
         enable_dns_settings.unwrap_or(false),
     );
 
-    #[cfg(not(target_os = "windows"))]
     let redir_enabled = verge_arc.verge_redir_enabled.unwrap_or(false);
-
-    #[cfg(target_os = "linux")]
-    let tproxy_enabled = verge_arc.verge_tproxy_enabled.unwrap_or(false);
 
     drop(verge_arc);
     drop(verge);
@@ -134,10 +127,7 @@ async fn get_config_values() -> ConfigValues {
         socks_enabled,
         http_enabled,
         enable_dns_settings,
-        #[cfg(not(target_os = "windows"))]
         redir_enabled,
-        #[cfg(target_os = "linux")]
-        tproxy_enabled,
     }
 }
 
@@ -370,8 +360,7 @@ async fn merge_default_config(
     clash_config: Mapping,
     socks_enabled: bool,
     http_enabled: bool,
-    #[cfg(not(target_os = "windows"))] redir_enabled: bool,
-    #[cfg(target_os = "linux")] tproxy_enabled: bool,
+    redir_enabled: bool,
 ) -> Mapping {
     for (key, value) in clash_config.into_iter() {
         if key.as_str() == Some("tun") {
@@ -392,32 +381,14 @@ async fn merge_default_config(
                 config.remove("port");
                 continue;
             }
-            #[cfg(target_os = "windows")]
-            {
-                if key.as_str() == Some("redir-port") {
-                    continue;
-                }
+            if key.as_str() == Some("redir-port") && !redir_enabled {
+                config.remove("redir-port");
+                continue;
             }
-            #[cfg(not(target_os = "windows"))]
-            {
-                if key.as_str() == Some("redir-port") && !redir_enabled {
-                    config.remove("redir-port");
-                    continue;
-                }
-            }
-            #[cfg(target_os = "linux")]
-            {
-                if key.as_str() == Some("tproxy-port") && !tproxy_enabled {
-                    config.remove("tproxy-port");
-                    continue;
-                }
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                if key.as_str() == Some("tproxy-port") {
-                    config.remove("tproxy-port");
-                    continue;
-                }
+            // tproxy-port is Linux-only, always remove on macOS
+            if key.as_str() == Some("tproxy-port") {
+                config.remove("tproxy-port");
+                continue;
             }
             // 处理 external-controller 键的开关逻辑
             if key.as_str() == Some("external-controller") {
@@ -614,10 +585,7 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
         socks_enabled,
         http_enabled,
         enable_dns_settings,
-        #[cfg(not(target_os = "windows"))]
         redir_enabled,
-        #[cfg(target_os = "linux")]
-        tproxy_enabled,
     } = cfg_vals;
 
     // collect profile items
@@ -656,10 +624,7 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
         clash_config,
         socks_enabled,
         http_enabled,
-        #[cfg(not(target_os = "windows"))]
         redir_enabled,
-        #[cfg(target_os = "linux")]
-        tproxy_enabled,
     )
     .await;
 
@@ -672,7 +637,6 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 
     config = use_tun(config, enable_tun);
 
-    #[cfg(target_os = "macos")]
     if enable_tun {
         let exclude_processes = Config::verge()
             .await

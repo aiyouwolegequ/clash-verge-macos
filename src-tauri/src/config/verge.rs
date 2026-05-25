@@ -57,7 +57,6 @@ pub struct IVerge {
     pub common_tray_icon: Option<bool>,
 
     /// tray icon
-    #[cfg(target_os = "macos")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tray_icon: Option<String>,
 
@@ -77,12 +76,10 @@ pub struct IVerge {
     pub collapse_navbar: Option<bool>,
 
     /// mac exclude apps list (macOS direct connect)
-    #[cfg(target_os = "macos")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mac_exclude_apps: Option<Vec<String>>,
 
     /// precomputed mac exclude app executables
-    #[cfg(target_os = "macos")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mac_exclude_app_executables: Option<Vec<String>>,
 
@@ -243,7 +240,6 @@ pub struct IVerge {
     )]
     pub webdav_password: Option<String>,
 
-    #[cfg(target_os = "macos")]
     pub enable_tray_speed: Option<bool>,
 
     // pub enable_tray_icon: Option<bool>,
@@ -405,7 +401,6 @@ impl IVerge {
             enable_memory_usage: Some(true),
             enable_group_icon: Some(true),
             pause_render_traffic_stats_on_blur: Some(true),
-            #[cfg(target_os = "macos")]
             tray_icon: Some("monochrome".into()),
             menu_icon: Some("monochrome".into()),
             notice_position: Some("top-right".into()),
@@ -415,9 +410,7 @@ impl IVerge {
             tun_tray_icon: Some(false),
             enable_auto_launch: Some(false),
             enable_silent_start: Some(false),
-            #[cfg(target_os = "macos")]
             mac_exclude_apps: Some(vec![]),
-            #[cfg(target_os = "macos")]
             mac_exclude_app_executables: Some(vec![]),
             enable_hover_jump_navigator: Some(true),
             hover_jump_navigator_delay: Some(280),
@@ -425,10 +418,6 @@ impl IVerge {
             proxy_auto_config: Some(false),
             pac_file_content: Some(DEFAULT_PAC.into()),
             proxy_host: Some("127.0.0.1".into()),
-            #[cfg(not(target_os = "windows"))]
-            verge_redir_port: Some(7895),
-            #[cfg(not(target_os = "windows"))]
-            verge_redir_enabled: Some(false),
             #[cfg(target_os = "linux")]
             verge_tproxy_port: Some(7896),
             #[cfg(target_os = "linux")]
@@ -498,7 +487,6 @@ impl IVerge {
         patch!(enable_memory_usage);
         patch!(enable_group_icon);
         patch!(pause_render_traffic_stats_on_blur);
-        #[cfg(target_os = "macos")]
         patch!(tray_icon);
         patch!(menu_icon);
         patch!(menu_order);
@@ -511,18 +499,11 @@ impl IVerge {
         patch!(enable_tun_mode);
         patch!(enable_auto_launch);
         patch!(enable_silent_start);
-        #[cfg(target_os = "macos")]
         patch!(mac_exclude_apps);
         patch!(enable_hover_jump_navigator);
         patch!(hover_jump_navigator_delay);
-        #[cfg(not(target_os = "windows"))]
         patch!(verge_redir_port);
-        #[cfg(not(target_os = "windows"))]
         patch!(verge_redir_enabled);
-        #[cfg(target_os = "linux")]
-        patch!(verge_tproxy_port);
-        #[cfg(target_os = "linux")]
-        patch!(verge_tproxy_enabled);
         patch!(verge_mixed_port);
         patch!(verge_socks_port);
         patch!(verge_socks_enabled);

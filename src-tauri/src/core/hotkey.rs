@@ -30,7 +30,6 @@ pub enum HotkeyFunction {
     EntryLightweightMode,
     ReactivateProfiles,
     Quit,
-    #[cfg(target_os = "macos")]
     Hide,
 }
 
@@ -46,7 +45,6 @@ impl fmt::Display for HotkeyFunction {
             Self::EntryLightweightMode => "entry_lightweight_mode",
             Self::ReactivateProfiles => "reactivate_profiles",
             Self::Quit => "quit",
-            #[cfg(target_os = "macos")]
             Self::Hide => "hide",
         };
         write!(f, "{s}")
@@ -67,22 +65,17 @@ impl FromStr for HotkeyFunction {
             "entry_lightweight_mode" => Ok(Self::EntryLightweightMode),
             "reactivate_profiles" => Ok(Self::ReactivateProfiles),
             "quit" => Ok(Self::Quit),
-            #[cfg(target_os = "macos")]
             "hide" => Ok(Self::Hide),
             _ => bail!("invalid hotkey function: {}", s),
         }
     }
 }
 
-#[cfg(target_os = "macos")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Enum representing predefined system hotkeys
 pub enum SystemHotkey {
     CmdQ,
     CmdW,
 }
 
-#[cfg(target_os = "macos")]
 impl fmt::Display for SystemHotkey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
@@ -93,7 +86,6 @@ impl fmt::Display for SystemHotkey {
     }
 }
 
-#[cfg(target_os = "macos")]
 impl SystemHotkey {
     pub const fn function(self) -> HotkeyFunction {
         match self {
@@ -192,7 +184,6 @@ impl Hotkey {
                     feat::quit().await;
                 });
             }
-            #[cfg(target_os = "macos")]
             HotkeyFunction::Hide => {
                 AsyncHandler::spawn(async move || {
                     feat::hide().await;
@@ -202,7 +193,6 @@ impl Hotkey {
         }
     }
 
-    #[cfg(target_os = "macos")]
     /// Register a system hotkey using enum
     pub async fn register_system_hotkey(&self, hotkey: SystemHotkey) -> Result<()> {
         let hotkey_str = hotkey.to_string();
@@ -210,7 +200,6 @@ impl Hotkey {
         self.register_hotkey_with_function(&hotkey_str, function).await
     }
 
-    #[cfg(target_os = "macos")]
     /// Unregister a system hotkey using enum
     pub fn unregister_system_hotkey(&self, hotkey: SystemHotkey) -> Result<()> {
         let hotkey_str = hotkey.to_string();
