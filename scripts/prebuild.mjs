@@ -39,13 +39,18 @@ const arg2 = process.argv.slice(2)[1]
 const target = arg1 === '--force' || arg1 === '-f' ? arg2 : arg1
 const { platform, arch } = target
   ? { platform: PLATFORM_MAP[target], arch: ARCH_MAP[target] }
-  : process
+  : {
+      platform: process.platform,
+      arch: process.platform === 'darwin' ? 'arm64' : process.arch,
+    }
 
 const SIDECAR_HOST = target
   ? target
-  : execSync('rustc -vV')
-      .toString()
-      .match(/(?<=host: ).+(?=\s*)/g)[0]
+  : process.platform === 'darwin'
+    ? 'aarch64-apple-darwin'
+    : execSync('rustc -vV')
+        .toString()
+        .match(/(?<=host: ).+(?=\s*)/g)[0]
 
 const RESOURCES_DIR = path.join(cwd, 'src-tauri', 'resources')
 const SIDECAR_DIR = path.join(cwd, 'src-tauri', 'sidecar')
