@@ -163,18 +163,13 @@ jobs:
           rustup target list --installed
 
       - name: Tauri build for macOS
+        # 无 Apple 签名，使用 ad-hoc signing
         uses: tauri-apps/tauri-action@v0
         env:
           NODE_OPTIONS: '--max_old_space_size=4096'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ env.TAG_NAME }}
           releaseName: 'Clash Verge macOS ${{ env.TAG_CHANNEL }}'
@@ -182,69 +177,3 @@ jobs:
           releaseDraft: false
           prerelease: true
           tauriScript: pnpm
-          args: --target aarch64-apple-darwin
-
-  notify-telegram:
-    name: Notify Telegram
-    runs-on: ubuntu-latest
-    needs: [update_tag, autobuild-macos]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Fetch UPDATE logs
-        id: fetch_update_logs
-        run: bash ./scripts/extract_update_logs.sh
-        shell: bash
-
-      - name: Install Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24.15.0'
-
-      - uses: pnpm/action-setup@v6.0.4
-        name: Install pnpm
-        with:
-          run_install: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Release AutoBuild Version
-        run: pnpm release-version autobuild-latest
-
-      - name: Get Version and Release Info
-        run: |
-          sudo apt-get update
-          sudo apt-get install jq
-          echo "VERSION=$(cat package.json | jq '.version' | tr -d '"')" >> $GITHUB_ENV
-          echo "DOWNLOAD_URL=https://github.com/aiyouwolegequ/clash-verge-macos/releases/download/autobuild" >> $GITHUB_ENV
-          echo "BUILDTIME=$(TZ=Asia/Shanghai date)" >> $GITHUB_ENV
-
-      - name: Generate release.txt
-        run: |
-          if [ -z "$UPDATE_LOGS" ]; then
-            echo "No update logs found, using default message"
-            UPDATE_LOGS="More new features are now supported. Check for detailed changelog soon."
-          else
-            echo "Using found update logs"
-          fi
-
-          cat > release.txt << EOF
-          $UPDATE_LOGS
-
-          ## 下载地址
-
-          ### macOS (Apple Silicon)
-          - [Apple M芯片](${{ env.DOWNLOAD_URL }}/Clash.Verge_${{ env.VERSION }}_aarch64.dmg)
-
-          Created at ${{ env.BUILDTIME }}.
-          EOF
-
-      - name: Send Telegram Notification
-        run: node scripts/telegram.mjs
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          BUILD_TYPE: autobuild
-          VERSION: ${{ env.VERSION }}
-          DOWNLOAD_URL: ${{ env.DOWNLOAD_URL }}
