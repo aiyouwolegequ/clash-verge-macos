@@ -1,4 +1,4 @@
-## v2.7.13
+## v2.7.14
 
 > [!IMPORTANT]
 > 本版本优化了构建和工作流配置，使项目完全专一地针对 macOS ARM (Apple Silicon) 架构，优化了 prebuild 工具和 GitHub CI 工作流。
