@@ -1,3 +1,16 @@
+## v2.7.13
+
+> [!IMPORTANT]
+> 本版本优化了构建和工作流配置，使项目完全专一地针对 macOS ARM (Apple Silicon) 架构，优化了 prebuild 工具和 GitHub CI 工作流。
+
+### 🚀 优化改进
+
+- **限制至 macOS ARM**：Tauri 构建配置 `package.json` 添加 `--target aarch64-apple-darwin`，显式指定 Apple Silicon 目标架构。
+- **本地开发优化**：优化 `scripts/prebuild.mjs` 中的平台和架构检测逻辑。在 macOS 环境下本地运行 prebuild 会强制下载/安装 `darwin-arm64` 和 `aarch64-apple-darwin` sidecars，即使在 Intel Mac 上开发也可以无缝生成 ARM 版本。
+- **GitHub 工作流优化**：简化 `.github/workflows/lint-clippy.yml` 与 `.github/workflows/cargo-audit.yml`，移除针对 Windows 和 Linux 平台构建矩阵，降低 CI 运行时间并节省计算资源。
+
+---
+
 ## v2.7.12
 
 > [!IMPORTANT]
