@@ -180,13 +180,12 @@ jobs:
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-rc') }}
           tauriScript: pnpm
-          args: --target aarch64-apple-darwin
           includeUpdaterJson: true
 
       - name: Attest macOS bundles
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          subject-path: target/release/bundle/dmg/*.dmg
 
   release-update:
     if: ${{ !contains(github.ref_name, '-rc') }}
