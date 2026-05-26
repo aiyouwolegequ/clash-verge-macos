@@ -42,22 +42,44 @@ const spin = keyframes({
 })
 
 interface AppTrafficItem {
+  app_id: string
+  app_name: string
   process_name: string
   process_path: string
+  mode: string
   traffic_mode: string
+  bundle_id?: string | null
+  bundle_path?: string | null
+  executable_name?: string | null
+  attribution_source: string
   upload_bytes: number
   download_bytes: number
 }
 type Period = 'day' | 'week' | 'month'
+type TrafficMode = 'direct' | 'reject' | 'tun' | 'proxy' | 'unknown'
 
 const modeColors: Record<string, 'success' | 'error' | 'warning' | 'info'> = {
-  直连: 'success',
-  拦截: 'error',
-  TUN: 'warning',
-  代理: 'info',
+  direct: 'success',
+  reject: 'error',
+  tun: 'warning',
+  proxy: 'info',
 }
 
-/** 清理应用名称：去除 .app 后缀、尾部版本号，规范化大小写 */
+const modeLabels: Record<TrafficMode, string> = {
+  direct: '直连',
+  reject: '拦截',
+  tun: 'TUN',
+  proxy: '代理',
+  unknown: '未知',
+}
+
+function modeLabel(mode: string): string {
+  return (
+    modeLabels[(mode || 'unknown') as TrafficMode] || mode || modeLabels.unknown
+  )
+}
+
+/** 兼容旧统计数据的名称清理 */
 function cleanAppName(name: string | undefined | null): string | undefined {
   if (!name) return undefined
   let cleaned = name.trim()
@@ -116,8 +138,8 @@ export const AppTrafficStats = () => {
       setDetailLoading(true)
       try {
         const data = await getAppTrafficDetail(
-          item.process_path,
-          item.traffic_mode,
+          item.app_id || item.process_path || item.process_name,
+          item.mode || item.traffic_mode,
           period,
         )
         setDetailData(data)
@@ -157,7 +179,7 @@ export const AppTrafficStats = () => {
 
   const filteredItems = useMemo(() => {
     const result = modeFilter
-      ? items.filter((i) => i.traffic_mode === modeFilter)
+      ? items.filter((i) => (i.mode || i.traffic_mode) === modeFilter)
       : [...items]
     result.sort((a, b) => {
       const cmp =
@@ -183,6 +205,7 @@ export const AppTrafficStats = () => {
   )
 
   const displayName = (item: AppTrafficItem) => {
+    if (item.app_name) return cleanAppName(item.app_name) || item.app_name
     // 无进程路径 → 清理 process_name 后显示
     if (!item.process_path || item.process_path.startsWith('<')) {
       return cleanAppName(item.process_name) || 'Unknown'
@@ -203,7 +226,7 @@ export const AppTrafficStats = () => {
 
   const availableModes = useMemo(() => {
     const modes = new Set<string>()
-    items.forEach((i) => modes.add(i.traffic_mode))
+    items.forEach((i) => modes.add(i.mode || i.traffic_mode || 'unknown'))
     return Array.from(modes)
   }, [items])
 
@@ -287,7 +310,7 @@ export const AppTrafficStats = () => {
         {availableModes.map((mode) => (
           <Chip
             key={mode}
-            label={mode}
+            label={modeLabel(mode)}
             size="small"
             color={modeColors[mode] || 'default'}
             variant={modeFilter === mode ? 'filled' : 'outlined'}
@@ -345,7 +368,7 @@ export const AppTrafficStats = () => {
           <TableBody>
             {filteredItems.map((item) => (
               <TableRow
-                key={`${item.process_name}-${item.traffic_mode}-${item.process_path}`}
+                key={`${item.app_id || item.process_name}-${item.mode || item.traffic_mode}`}
                 onClick={() => handleRowClick(item)}
                 sx={{ cursor: 'pointer' }}
               >
@@ -365,9 +388,11 @@ export const AppTrafficStats = () => {
                 </TableCell>
                 <TableCell>
                   <Chip
-                    label={item.traffic_mode}
+                    label={modeLabel(item.mode || item.traffic_mode)}
                     size="small"
-                    color={modeColors[item.traffic_mode] || 'default'}
+                    color={
+                      modeColors[item.mode || item.traffic_mode] || 'default'
+                    }
                     variant="outlined"
                   />
                 </TableCell>
@@ -411,7 +436,9 @@ export const AppTrafficStats = () => {
             <AppsRounded fontSize="small" />
             <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
               {detailItem ? displayName(detailItem) : ''} ·{' '}
-              {detailItem?.traffic_mode}
+              {detailItem
+                ? modeLabel(detailItem.mode || detailItem.traffic_mode)
+                : ''}
             </Typography>
             {detailLoading && <CircularProgress size={16} />}
           </Box>

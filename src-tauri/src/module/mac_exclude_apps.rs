@@ -1,12 +1,213 @@
 use crate::config::Config;
+use crate::core::CoreManager;
 use crate::process::AsyncHandler;
 use anyhow::Result;
 use chrono::Local;
 use clash_verge_logging::{Type, logging};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use plist::Value as PlistValue;
+use serde::Serialize;
 use smartstring::alias::String as SmartString;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MacAppInfo {
+    pub name: SmartString,
+    pub path: SmartString,
+    pub bundle_id: Option<SmartString>,
+    pub executable_names: Vec<SmartString>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppIdentity {
+    pub app_id: SmartString,
+    pub app_name: SmartString,
+    pub bundle_id: Option<SmartString>,
+    pub bundle_path: Option<SmartString>,
+    pub executable_name: Option<SmartString>,
+    pub attribution_source: SmartString,
+}
+
+fn plist_string(info: &PlistValue, key: &str) -> Option<SmartString> {
+    info.as_dictionary()
+        .and_then(|dict| dict.get(key))
+        .and_then(PlistValue::as_string)
+        .filter(|value| !value.trim().is_empty())
+        .map(SmartString::from)
+}
+
+pub fn read_bundle_info(app_bundle: &Path) -> (Option<SmartString>, Option<SmartString>, Option<SmartString>) {
+    let info_path = app_bundle.join("Contents/Info.plist");
+    let Ok(info) = PlistValue::from_file(&info_path) else {
+        return (None, None, None);
+    };
+
+    let display_name = plist_string(&info, "CFBundleDisplayName")
+        .or_else(|| plist_string(&info, "CFBundleName"))
+        .or_else(|| plist_string(&info, "CFBundleExecutable"));
+    let bundle_id = plist_string(&info, "CFBundleIdentifier");
+    let executable = plist_string(&info, "CFBundleExecutable");
+    (display_name, bundle_id, executable)
+}
+
+fn app_bundle_from_path(path: &Path) -> Option<PathBuf> {
+    let mut current = Some(path);
+    while let Some(candidate) = current {
+        if candidate.extension().and_then(|ext| ext.to_str()) == Some("app") {
+            return Some(candidate.to_path_buf());
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn path_stem(path: &Path) -> Option<SmartString> {
+    path.file_stem()
+        .or_else(|| path.file_name())
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .map(SmartString::from)
+}
+
+fn path_file_name(path: &Path) -> Option<SmartString> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .map(SmartString::from)
+}
+
+pub fn collect_bundle_executables(app_bundle: &Path) -> Vec<SmartString> {
+    let mut executables = Vec::<SmartString>::new();
+    let (_, _, bundle_executable) = read_bundle_info(app_bundle);
+    if let Some(executable) = bundle_executable {
+        executables.push(executable);
+    }
+    if let Some(app_name) = path_stem(app_bundle)
+        && !executables.contains(&app_name)
+    {
+        executables.push(app_name);
+    }
+
+    let macos_dir = app_bundle.join("Contents/MacOS");
+    if let Ok(entries) = std::fs::read_dir(&macos_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if (path.is_file() || path.symlink_metadata().ok().is_some_and(|m| m.file_type().is_symlink()))
+                && let Some(name) = path_file_name(&path)
+                && !executables.contains(&name)
+            {
+                executables.push(name);
+            }
+        }
+    }
+
+    executables
+}
+
+pub fn resolve_app_identity(
+    process_name: &str,
+    process_path: &str,
+    host: &str,
+    remote_destination: &str,
+) -> Option<AppIdentity> {
+    if !process_path.trim().is_empty() {
+        let path = Path::new(process_path);
+        if let Some(bundle) = app_bundle_from_path(path) {
+            let (display_name, bundle_id, executable) = read_bundle_info(&bundle);
+            let bundle_path = SmartString::from(bundle.to_string_lossy().as_ref());
+            let app_name = display_name
+                .or_else(|| path_stem(&bundle))
+                .unwrap_or_else(|| SmartString::from("Unknown"));
+            let app_id = bundle_id.clone().unwrap_or_else(|| bundle_path.clone());
+            let executable_name = executable.or_else(|| path_file_name(path));
+            return Some(AppIdentity {
+                app_id,
+                app_name,
+                bundle_id,
+                bundle_path: Some(bundle_path),
+                executable_name,
+                attribution_source: SmartString::from("bundle"),
+            });
+        }
+
+        let app_name = path_file_name(path).unwrap_or_else(|| SmartString::from(process_path));
+        return Some(AppIdentity {
+            app_id: SmartString::from(process_path),
+            app_name,
+            bundle_id: None,
+            bundle_path: None,
+            executable_name: path_file_name(path),
+            attribution_source: SmartString::from("path"),
+        });
+    }
+
+    if !process_name.trim().is_empty() {
+        return Some(AppIdentity {
+            app_id: SmartString::from(format!("process:{process_name}")),
+            app_name: SmartString::from(process_name),
+            bundle_id: None,
+            bundle_path: None,
+            executable_name: Some(SmartString::from(process_name)),
+            attribution_source: SmartString::from("process"),
+        });
+    }
+
+    let fallback = if !host.trim().is_empty() {
+        host
+    } else if !remote_destination.trim().is_empty() {
+        remote_destination
+    } else {
+        return None;
+    };
+
+    Some(AppIdentity {
+        app_id: SmartString::from(format!("destination:{fallback}")),
+        app_name: SmartString::from(fallback),
+        bundle_id: None,
+        bundle_path: None,
+        executable_name: None,
+        attribution_source: SmartString::from("destination"),
+    })
+}
+
+pub fn get_installed_macos_apps() -> Vec<MacAppInfo> {
+    let mut apps = Vec::new();
+    let mut dirs = vec![
+        PathBuf::from("/Applications"),
+        PathBuf::from("/System/Applications"),
+        PathBuf::from("/System/Applications/Utilities"),
+    ];
+    if let Ok(home) = std::env::var("HOME") {
+        dirs.push(PathBuf::from(home).join("Applications"));
+    }
+
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("app") {
+                continue;
+            }
+
+            let (display_name, bundle_id, _) = read_bundle_info(&path);
+            let Some(name) = display_name.or_else(|| path_stem(&path)) else {
+                continue;
+            };
+            apps.push(MacAppInfo {
+                name,
+                path: SmartString::from(path.to_string_lossy().as_ref()),
+                bundle_id,
+                executable_names: collect_bundle_executables(&path),
+            });
+        }
+    }
+
+    apps.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.path.cmp(&b.path)));
+    apps.dedup_by(|a, b| a.path == b.path);
+    apps
+}
 
 pub struct MacExcludeAppsManager {
     enabled: AtomicBool,
@@ -82,28 +283,9 @@ impl MacExcludeAppsManager {
         let mut all_executables = Vec::<SmartString>::new();
 
         for app_path in &apps {
-            let app_bundle = std::path::Path::new(app_path.as_str());
-            let macos_dir = app_bundle.join("Contents/MacOS");
-
-            if let Some(app_name) = app_bundle.file_stem().and_then(|s| s.to_str()) {
-                let app_name_sm = SmartString::from(app_name);
-                if !all_executables.contains(&app_name_sm) {
-                    all_executables.push(app_name_sm);
-                }
-            }
-
-            #[allow(clippy::collapsible_if)]
-            if let Ok(entries) = std::fs::read_dir(&macos_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() || path.symlink_metadata().ok().is_some_and(|m| m.file_type().is_symlink()) {
-                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                            let name_sm = SmartString::from(name);
-                            if !all_executables.contains(&name_sm) {
-                                all_executables.push(name_sm);
-                            }
-                        }
-                    }
+            for executable in collect_bundle_executables(std::path::Path::new(app_path.as_str())) {
+                if !all_executables.contains(&executable) {
+                    all_executables.push(executable);
                 }
             }
         }
@@ -127,6 +309,12 @@ impl MacExcludeAppsManager {
             apps.len()
         );
 
+        Ok(())
+    }
+
+    pub async fn refresh_and_apply(&self) -> Result<()> {
+        self.refresh_executables().await?;
+        CoreManager::global().update_config_checked().await?;
         Ok(())
     }
 

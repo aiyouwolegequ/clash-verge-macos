@@ -27,7 +27,14 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
   (_, ref) => {
     const [open, setOpen] = useState(false)
     const [search, setSearch] = useState('')
-    const [apps, setApps] = useState<{ name: string; path: string }[]>([])
+    const [apps, setApps] = useState<
+      {
+        name: string
+        path: string
+        bundle_id?: string
+        executable_names: string[]
+      }[]
+    >([])
     const [refreshing, setRefreshing] = useState(false)
     const { verge, patchVerge, mutateVerge } = useVerge()
     const excludeApps = verge?.mac_exclude_apps || []
@@ -187,7 +194,11 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
                   <ListItemText
                     id={labelId}
                     primary={app.name}
-                    secondary={app.path}
+                    secondary={
+                      app.bundle_id
+                        ? `${app.bundle_id} · ${app.path}`
+                        : app.path
+                    }
                     sx={{ wordBreak: 'break-all' }}
                   />
                 </ListItemButton>

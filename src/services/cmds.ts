@@ -14,7 +14,14 @@ export async function getProfiles() {
 }
 
 export async function getMacosApps() {
-  return invoke<{ name: string; path: string }[]>('get_macos_apps')
+  return invoke<
+    {
+      name: string
+      path: string
+      bundle_id?: string
+      executable_names: string[]
+    }[]
+  >('get_macos_apps')
 }
 
 export async function refreshMacExcludeApps() {
@@ -24,9 +31,16 @@ export async function refreshMacExcludeApps() {
 export async function getAppTrafficStats(period: 'day' | 'week' | 'month') {
   return invoke<
     {
+      app_id: string
+      app_name: string
       process_name: string
       process_path: string
+      mode: string
       traffic_mode: string
+      bundle_id?: string | null
+      bundle_path?: string | null
+      executable_name?: string | null
+      attribution_source: string
       upload_bytes: number
       download_bytes: number
     }[]
@@ -41,7 +55,7 @@ export async function getGlobalTrafficStats(period: 'day' | 'week' | 'month') {
 }
 
 export async function getAppTrafficDetail(
-  processPath: string,
+  appId: string,
   trafficMode: string,
   period: 'day' | 'week' | 'month',
 ) {
@@ -51,7 +65,7 @@ export async function getAppTrafficDetail(
       upload_bytes: number
       download_bytes: number
     }[]
-  >('get_app_traffic_detail', { processPath, trafficMode, period })
+  >('get_app_traffic_detail', { appId, trafficMode, period })
 }
 
 export async function clearAppTrafficStats() {

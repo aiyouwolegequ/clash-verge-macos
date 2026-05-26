@@ -21,6 +21,7 @@ use clash_verge_logging::{Type, logging};
 use serde_yaml_ng::{Mapping, Value};
 use smartstring::alias::String;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use tokio::fs;
 
 type ResultLog = Vec<(String, String)>;
@@ -542,6 +543,81 @@ fn deduplicate_rules(mut config: Mapping) -> Mapping {
     config
 }
 
+fn push_rule_once(rules: &mut Vec<Value>, seen: &mut HashSet<std::string::String>, rule: std::string::String) {
+    if seen.insert(rule.clone()) {
+        rules.push(Value::String(rule));
+    }
+}
+
+async fn apply_mac_direct_app_rules(mut config: Mapping) -> Mapping {
+    let apps = Config::verge()
+        .await
+        .latest_arc()
+        .mac_exclude_apps
+        .clone()
+        .unwrap_or_default();
+
+    if apps.is_empty() {
+        return config;
+    }
+
+    let existing_rules = config
+        .get("rules")
+        .and_then(Value::as_sequence)
+        .cloned()
+        .unwrap_or_default();
+    let mut seen = existing_rules
+        .iter()
+        .filter_map(Value::as_str)
+        .map(ToOwned::to_owned)
+        .collect::<HashSet<_>>();
+    let mut direct_rules = Vec::<Value>::new();
+
+    for app_path in apps {
+        if app_path.contains(',') {
+            logging!(
+                warn,
+                Type::Core,
+                "Skip macOS direct app with comma in path: {}",
+                app_path
+            );
+            continue;
+        }
+
+        let app_bundle = Path::new(app_path.as_str());
+        if app_bundle.extension().and_then(|ext| ext.to_str()) != Some("app") {
+            continue;
+        }
+
+        let executable_glob = app_bundle.join("Contents/MacOS/*");
+        push_rule_once(
+            &mut direct_rules,
+            &mut seen,
+            format!("PROCESS-PATH-WILDCARD,{},DIRECT", executable_glob.to_string_lossy()),
+        );
+
+        for executable in crate::module::mac_exclude_apps::collect_bundle_executables(app_bundle) {
+            if executable.contains(',') {
+                continue;
+            }
+            push_rule_once(
+                &mut direct_rules,
+                &mut seen,
+                format!("PROCESS-NAME,{},DIRECT", executable),
+            );
+        }
+    }
+
+    if direct_rules.is_empty() {
+        return config;
+    }
+
+    direct_rules.extend(existing_rules);
+    config.insert("rules".into(), Value::Sequence(direct_rules));
+    config.insert("find-process-mode".into(), Value::String("always".into()));
+    config
+}
+
 async fn apply_dns_settings(mut config: Mapping, enable_dns_settings: bool) -> Mapping {
     if enable_dns_settings && let Ok(app_dir) = dirs::app_home_dir() {
         let dns_path = app_dir.join(constants::files::DNS_CONFIG);
@@ -628,28 +704,10 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 
     config = deduplicate_rules(config);
 
+    config = apply_mac_direct_app_rules(config).await;
+
     config = use_tun(config, enable_tun);
 
-    if enable_tun {
-        let exclude_processes = Config::verge()
-            .await
-            .latest_arc()
-            .mac_exclude_app_executables
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|s| Value::String(s.to_string()))
-            .collect::<Vec<_>>();
-
-        #[allow(clippy::collapsible_if)]
-        if !exclude_processes.is_empty() {
-            if let Some(tun) = config.get_mut("tun").and_then(|v| v.as_mapping_mut()) {
-                tun.insert("auto-redirect".into(), Value::Bool(false));
-                tun.insert("auto-route".into(), Value::Bool(true));
-                tun.insert("exclude-allowed-processes".into(), Value::Sequence(exclude_processes));
-            }
-        }
-    }
     config = use_sort(config);
 
     // dns settings

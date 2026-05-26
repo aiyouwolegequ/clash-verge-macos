@@ -1,3 +1,26 @@
+## v2.7.12
+
+> [!IMPORTANT]
+> 本版本优化 macOS 应用流量统计归因与「macOS 直连应用」规则生成逻辑，让同一 App 的主进程、Helper 进程和域名明细更稳定地归并到同一个应用身份下。
+
+### 🚀 优化改进
+
+- **应用流量统计归因**：读取 `.app/Contents/Info.plist`，基于 `bundle_id`、Bundle 路径、可执行文件名生成稳定 `app_id`
+- **应用聚合准确性**：主进程、Helper 进程和路径回退数据按应用身份聚合，减少同一 App 被拆成多条记录
+- **域名明细查询**：应用流量详情优先按 `app_id` 查询，并兼容旧版 `process_path` 历史数据
+- **流量模式标准化**：后端存储统一为 `direct` / `reject` / `tun` / `proxy`，前端继续显示「直连 / 拦截 / TUN / 代理」
+- **macOS 应用识别**：应用选择器扩展扫描 `/Applications`、`/System/Applications`、`/System/Applications/Utilities` 和 `~/Applications`，并展示 `bundle_id`
+- **直连规则生成**：为选中的 `.app` 注入 `PROCESS-PATH-WILDCARD` 和 `PROCESS-NAME` 直连规则，并启用 `find-process-mode: always`
+- **配置即时生效**：刷新 macOS 直连应用可执行文件后同步触发核心配置更新
+- **开发校验**：修复 `pnpm format:check` 扫描 `.pnpm-store` 临时缓存导致格式检查失败的问题
+
+### 🐞 修复问题
+
+- 修复同一 macOS App 因 Helper 进程、可执行文件名或路径差异导致流量统计拆分的问题
+- 修复直连应用仅依赖 TUN 进程排除字段时规则命中不够稳定的问题
+
+---
+
 ## v2.7.11
 
 > [!IMPORTANT]

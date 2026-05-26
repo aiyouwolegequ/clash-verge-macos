@@ -12,11 +12,11 @@ pub async fn get_app_traffic_stats(period: String) -> CmdResult<Vec<AppTrafficSt
 
 #[tauri::command]
 pub async fn get_app_traffic_detail(
-    process_path: String,
+    app_id: String,
     traffic_mode: String,
     period: String,
 ) -> CmdResult<Vec<AppTrafficDomainStat>> {
-    query_traffic_detail(&process_path, &traffic_mode, &period)
+    query_traffic_detail(&app_id, &traffic_mode, &period)
         .await
         .stringify_err()
 }

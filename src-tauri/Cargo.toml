@@ -1,6 +1,6 @@
 [package]
 name = "clash-verge"
-version = "2.7.11"
+version = "2.7.12"
 description = "clash verge"
 authors = ["zzzgydi", "Tunglies", "wonfen", "MystiPanda"]
 license = "GPL-3.0-only"
@@ -111,6 +111,7 @@ dark-light = { git = "https://github.com/rust-dark-light/dark-light" }
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 bytes = "1.11.1"
 tokio-util = { version = "0.7.18", features = ["time"] }
+plist = "1.9.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

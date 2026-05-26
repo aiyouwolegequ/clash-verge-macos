@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 
 use crate::core::handle;
+use crate::module::mac_exclude_apps::resolve_app_identity;
 use crate::process::AsyncHandler;
 use crate::utils::dirs;
 use clash_verge_logging::{Type, logging};
@@ -90,9 +91,16 @@ const FAILURES_BEFORE_BACKOFF: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppTrafficStat {
+    pub app_id: String,
+    pub app_name: String,
     pub process_name: String,
     pub process_path: String,
+    pub mode: String,
     pub traffic_mode: String,
+    pub bundle_id: Option<String>,
+    pub bundle_path: Option<String>,
+    pub executable_name: Option<String>,
+    pub attribution_source: String,
     pub upload_bytes: u64,
     pub download_bytes: u64,
 }
@@ -109,6 +117,32 @@ pub struct AppTrafficDomainStat {
     pub upload_bytes: u64,
     pub download_bytes: u64,
 }
+
+struct TrafficDelta {
+    app_id: String,
+    app_name: String,
+    process_name: String,
+    process_path: String,
+    traffic_mode: String,
+    bundle_id: Option<String>,
+    bundle_path: Option<String>,
+    executable_name: Option<String>,
+    attribution_source: String,
+    upload_bytes: u64,
+    download_bytes: u64,
+}
+
+type TrafficDeltaKey = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
 
 pub fn init_app_traffic_daemon() {
     AsyncHandler::spawn(|| async {
@@ -186,7 +220,7 @@ pub fn init_app_traffic_daemon() {
             }
 
             let mut current_connection_stats: HashMap<String, (u64, u64)> = HashMap::new();
-            let mut deltas: HashMap<(String, String, String), (u64, u64)> = HashMap::new();
+            let mut deltas: HashMap<TrafficDeltaKey, (u64, u64)> = HashMap::new();
             let mut domain_deltas: HashMap<(String, String, String), (u64, u64)> = HashMap::new();
 
             if let Some(conns) = connections.connections {
@@ -202,38 +236,28 @@ pub fn init_app_traffic_daemon() {
                         None
                     };
 
-                    let display_name = if !process_path.is_empty() {
-                        let mut name = process_path.clone();
-                        if process_path.starts_with("/Applications/") && process_path.contains(".app/") {
-                            if let Some(app_idx) = process_path.find(".app/") {
-                                name = process_path[14..app_idx].to_string();
-                            }
-                        } else if let Some(pos) = process_path.rfind('/') {
-                            name = process_path[pos + 1..].to_string();
-                        }
-                        name
-                    } else if !process_name.is_empty() {
+                    let effective_process_name = if !process_name.is_empty() {
                         process_name.clone()
                     } else if let Some((ref name, _)) = lsof_fallback {
                         name.clone()
-                    } else if !host.is_empty() {
-                        host.clone()
-                    } else if !remote_destination.is_empty() {
-                        remote_destination.clone()
                     } else {
-                        continue;
+                        String::new()
                     };
-
-                    let path_for_key = if !process_path.is_empty() {
+                    let effective_process_path = if !process_path.is_empty() {
                         process_path.clone()
-                    } else if !process_name.is_empty() {
-                        format!("<{}>", process_name.as_str())
                     } else if let Some((_, ref path)) = lsof_fallback {
                         path.clone()
-                    } else if !host.is_empty() {
-                        format!("[{}]", host.as_str())
                     } else {
-                        format!("[{}]", remote_destination.as_str())
+                        String::new()
+                    };
+
+                    let Some(identity) = resolve_app_identity(
+                        &effective_process_name,
+                        &effective_process_path,
+                        host,
+                        remote_destination,
+                    ) else {
+                        continue;
                     };
 
                     let is_direct = conn.chains.iter().any(|c| c.eq_ignore_ascii_case("direct"))
@@ -242,19 +266,29 @@ pub fn init_app_traffic_daemon() {
                         || conn.rule.eq_ignore_ascii_case("reject");
 
                     let traffic_mode = if is_direct {
-                        "直连".to_string()
+                        "direct".to_string()
                     } else if is_reject {
-                        "拦截".to_string()
+                        "reject".to_string()
                     } else if format!("{:?}", conn.metadata.connection_type)
                         .to_uppercase()
                         .contains("TUN")
                     {
-                        "TUN".to_string()
+                        "tun".to_string()
                     } else {
-                        "代理".to_string()
+                        "proxy".to_string()
                     };
 
-                    let key = (display_name, traffic_mode.clone(), path_for_key.clone());
+                    let key = (
+                        identity.app_id.to_string(),
+                        identity.app_name.to_string(),
+                        traffic_mode.clone(),
+                        effective_process_name.clone(),
+                        effective_process_path.clone(),
+                        identity.bundle_id.as_ref().map(ToString::to_string),
+                        identity.bundle_path.as_ref().map(ToString::to_string),
+                        identity.executable_name.as_ref().map(ToString::to_string),
+                        identity.attribution_source.to_string(),
+                    );
                     current_connection_stats.insert(conn.id.clone(), (conn.upload, conn.download));
 
                     let prev = last_connection_stats.get(&conn.id).copied().unwrap_or((0, 0));
@@ -271,7 +305,7 @@ pub fn init_app_traffic_daemon() {
                         } else {
                             remote_destination.clone()
                         };
-                        let domain_key = (path_for_key.clone(), traffic_mode.clone(), domain);
+                        let domain_key = (identity.app_id.to_string(), traffic_mode.clone(), domain);
                         let domain_entry = domain_deltas.entry(domain_key).or_insert((0, 0));
                         domain_entry.0 += delta_up;
                         domain_entry.1 += delta_down;
@@ -282,7 +316,19 @@ pub fn init_app_traffic_daemon() {
                 if !is_first_poll {
                     let mut db_deltas = Vec::new();
                     for (key, (up, down)) in deltas {
-                        db_deltas.push((key.0, key.1, key.2, up, down));
+                        db_deltas.push(TrafficDelta {
+                            app_id: key.0,
+                            app_name: key.1,
+                            traffic_mode: key.2,
+                            process_name: key.3,
+                            process_path: key.4,
+                            bundle_id: key.5,
+                            bundle_path: key.6,
+                            executable_name: key.7,
+                            attribution_source: key.8,
+                            upload_bytes: up,
+                            download_bytes: down,
+                        });
                     }
 
                     if !db_deltas.is_empty()
@@ -317,6 +363,15 @@ async fn setup_db() -> anyhow::Result<()> {
 
     let _ = conn.execute("ALTER TABLE app_traffic ADD COLUMN process_path TEXT DEFAULT ''", []);
     let _ = conn.execute("ALTER TABLE app_traffic ADD COLUMN traffic_mode TEXT DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE app_traffic ADD COLUMN app_id TEXT DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE app_traffic ADD COLUMN app_name TEXT DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE app_traffic ADD COLUMN bundle_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE app_traffic ADD COLUMN bundle_path TEXT", []);
+    let _ = conn.execute("ALTER TABLE app_traffic ADD COLUMN executable_name TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE app_traffic ADD COLUMN attribution_source TEXT DEFAULT ''",
+        [],
+    );
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS app_traffic (
@@ -324,6 +379,12 @@ async fn setup_db() -> anyhow::Result<()> {
             process_name TEXT NOT NULL,
             process_path TEXT DEFAULT '',
             traffic_mode TEXT DEFAULT '',
+            app_id TEXT DEFAULT '',
+            app_name TEXT DEFAULT '',
+            bundle_id TEXT,
+            bundle_path TEXT,
+            executable_name TEXT,
+            attribution_source TEXT DEFAULT '',
             upload_bytes INTEGER NOT NULL,
             download_bytes INTEGER NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -333,6 +394,10 @@ async fn setup_db() -> anyhow::Result<()> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_timestamp ON app_traffic (timestamp)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_app_traffic_app_period ON app_traffic (app_id, traffic_mode, timestamp)",
         [],
     )?;
 
@@ -354,6 +419,7 @@ async fn setup_db() -> anyhow::Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS app_traffic_domain (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id TEXT DEFAULT '',
             process_path TEXT NOT NULL,
             traffic_mode TEXT DEFAULT '',
             domain TEXT NOT NULL,
@@ -368,6 +434,11 @@ async fn setup_db() -> anyhow::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_domain_timestamp ON app_traffic_domain (timestamp)",
         [],
     )?;
+    let _ = conn.execute("ALTER TABLE app_traffic_domain ADD COLUMN app_id TEXT DEFAULT ''", []);
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_domain_app_period ON app_traffic_domain (app_id, traffic_mode, timestamp)",
+        [],
+    )?;
 
     let mut db_guard = DB_CONN.lock().await;
     *db_guard = Some(conn);
@@ -375,22 +446,32 @@ async fn setup_db() -> anyhow::Result<()> {
 }
 
 #[allow(clippy::significant_drop_tightening)]
-async fn insert_traffic_deltas(deltas: &[(String, String, String, u64, u64)]) -> anyhow::Result<()> {
+async fn insert_traffic_deltas(deltas: &[TrafficDelta]) -> anyhow::Result<()> {
     let mut db_guard = DB_CONN.lock().await;
     if let Some(conn) = db_guard.as_mut() {
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO app_traffic (process_name, traffic_mode, process_path, upload_bytes, download_bytes)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO app_traffic (
+                    app_id, app_name, process_name, traffic_mode, process_path,
+                    bundle_id, bundle_path, executable_name, attribution_source,
+                    upload_bytes, download_bytes
+                )
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             )?;
-            for (process_name, traffic_mode, process_path, up, down) in deltas {
+            for delta in deltas {
                 stmt.execute(params![
-                    process_name,
-                    traffic_mode,
-                    process_path,
-                    *up as i64,
-                    *down as i64
+                    delta.app_id,
+                    delta.app_name,
+                    delta.process_name,
+                    delta.traffic_mode,
+                    delta.process_path,
+                    delta.bundle_id,
+                    delta.bundle_path,
+                    delta.executable_name,
+                    delta.attribution_source,
+                    delta.upload_bytes as i64,
+                    delta.download_bytes as i64
                 ])?;
             }
         }
@@ -406,11 +487,11 @@ async fn insert_domain_deltas(deltas: &[(String, String, String, u64, u64)]) -> 
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO app_traffic_domain (process_path, traffic_mode, domain, upload_bytes, download_bytes)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO app_traffic_domain (app_id, process_path, traffic_mode, domain, upload_bytes, download_bytes)
+                 VALUES (?1, ?1, ?2, ?3, ?4, ?5)",
             )?;
-            for (process_path, traffic_mode, domain, up, down) in deltas {
-                stmt.execute(params![process_path, traffic_mode, domain, *up as i64, *down as i64])?;
+            for (app_id, traffic_mode, domain, up, down) in deltas {
+                stmt.execute(params![app_id, traffic_mode, domain, *up as i64, *down as i64])?;
             }
         }
         tx.commit()?;
@@ -460,19 +541,37 @@ pub async fn query_traffic(period: &str) -> anyhow::Result<Vec<AppTrafficStat>> 
     let mut db_guard = DB_CONN.lock().await;
     if let Some(conn) = db_guard.as_mut() {
         let mut stmt = conn.prepare(
-            "SELECT process_name, process_path, traffic_mode, SUM(upload_bytes), SUM(download_bytes)
+            "SELECT
+                COALESCE(NULLIF(app_id, ''), NULLIF(process_path, ''), process_name) AS normalized_app_id,
+                COALESCE(NULLIF(app_name, ''), process_name, process_path, 'Unknown') AS normalized_app_name,
+                MIN(process_name),
+                MIN(process_path),
+                traffic_mode,
+                MIN(bundle_id),
+                MIN(bundle_path),
+                MIN(executable_name),
+                COALESCE(NULLIF(MIN(attribution_source), ''), 'legacy'),
+                SUM(upload_bytes),
+                SUM(download_bytes)
              FROM app_traffic
              WHERE timestamp >= ?1
-             GROUP BY process_name, process_path, traffic_mode
+             GROUP BY normalized_app_id, normalized_app_name, traffic_mode
              ORDER BY SUM(download_bytes) DESC",
         )?;
         let rows = stmt.query_map(params![start_str], |row| {
             Ok(AppTrafficStat {
-                process_name: row.get(0)?,
-                process_path: row.get(1)?,
-                traffic_mode: row.get(2)?,
-                upload_bytes: row.get::<_, i64>(3)? as u64,
-                download_bytes: row.get::<_, i64>(4)? as u64,
+                app_id: row.get(0)?,
+                app_name: row.get(1)?,
+                process_name: row.get(2)?,
+                process_path: row.get(3)?,
+                mode: row.get(4)?,
+                traffic_mode: row.get(4)?,
+                bundle_id: row.get(5)?,
+                bundle_path: row.get(6)?,
+                executable_name: row.get(7)?,
+                attribution_source: row.get(8)?,
+                upload_bytes: row.get::<_, i64>(9)? as u64,
+                download_bytes: row.get::<_, i64>(10)? as u64,
             })
         })?;
 
@@ -487,7 +586,7 @@ pub async fn query_traffic(period: &str) -> anyhow::Result<Vec<AppTrafficStat>> 
 
 #[allow(clippy::significant_drop_tightening)]
 pub async fn query_traffic_detail(
-    process_path: &str,
+    app_id: &str,
     traffic_mode: &str,
     period: &str,
 ) -> anyhow::Result<Vec<AppTrafficDomainStat>> {
@@ -521,11 +620,11 @@ pub async fn query_traffic_detail(
         let mut stmt = conn.prepare(
             "SELECT domain, SUM(upload_bytes), SUM(download_bytes)
              FROM app_traffic_domain
-             WHERE process_path = ?1 AND traffic_mode = ?2 AND timestamp >= ?3
+             WHERE (app_id = ?1 OR process_path = ?1) AND traffic_mode = ?2 AND timestamp >= ?3
              GROUP BY domain
              ORDER BY SUM(download_bytes) DESC",
         )?;
-        let rows = stmt.query_map(params![process_path, traffic_mode, start_str], |row| {
+        let rows = stmt.query_map(params![app_id, traffic_mode, start_str], |row| {
             Ok(AppTrafficDomainStat {
                 domain: row.get(0)?,
                 upload_bytes: row.get::<_, i64>(1)? as u64,
