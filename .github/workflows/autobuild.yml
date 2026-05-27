@@ -177,3 +177,4 @@ jobs:
           releaseDraft: false
           prerelease: true
           tauriScript: pnpm
+          args: --target aarch64-apple-darwin

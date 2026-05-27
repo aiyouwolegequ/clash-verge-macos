@@ -14,7 +14,7 @@ const IPC_RELEASE_URL = `https://github.com/clash-verge-rev/clash-verge-service-
  */
 async function main() {
   const profile = process.env.CARGO_BUILD_PROFILE || 'release'
-  const targetTriple = process.env.CARGO_BUILD_TARGET || ''
+  const targetTriple = process.env.CARGO_BUILD_TARGET || (process.platform === 'darwin' ? 'aarch64-apple-darwin' : '')
   const targetDir = process.env.CARGO_TARGET_DIR || 'target'
 
   const bundleDir = resolve(
