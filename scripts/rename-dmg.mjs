@@ -10,6 +10,8 @@ import path from 'node:path'
 const CANDIDATE_DIRS = [
   'target/release/bundle/dmg',
   'target/fast-release/bundle/dmg',
+  'target/aarch64-apple-darwin/release/bundle/dmg',
+  'target/aarch64-apple-darwin/fast-release/bundle/dmg',
 ]
 
 async function main() {
