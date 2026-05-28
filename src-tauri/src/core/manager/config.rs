@@ -92,6 +92,7 @@ impl CoreManager {
         self.apply_generate_config().await
     }
 
+    #[allow(clippy::cognitive_complexity)]
     pub async fn apply_generate_config(&self) -> Result<ValidationOutcome> {
         use crate::constants::files::RUNTIME_CONFIG;
 
@@ -187,7 +188,11 @@ impl CoreManager {
                         Ok(outcome)
                     }
                     Err(validate_err) => {
-                        logging!(error, Type::Core, "Validation process failed: {validate_err}. Restoring backup...");
+                        logging!(
+                            error,
+                            Type::Core,
+                            "Validation process failed: {validate_err}. Restoring backup..."
+                        );
                         if has_backup {
                             if let Err(restore_err) = tokio::fs::copy(&backup_path, &run_path).await {
                                 logging!(error, Type::Core, "Failed to restore backup config: {restore_err}");
