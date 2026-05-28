@@ -2123,6 +2123,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7610,11 +7616,11 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-mihomo"
 version = "0.1.5"
-source = "git+https://github.com/clash-verge-rev/tauri-plugin-mihomo?branch=revert#1cc80bc0fbe1245315617f4cecd93710a152325b"
 dependencies = [
  "base64 0.22.1",
  "bytes",
  "crossbeam",
+ "dotenvy",
  "futures-util",
  "http 1.4.0",
  "http-body-util",

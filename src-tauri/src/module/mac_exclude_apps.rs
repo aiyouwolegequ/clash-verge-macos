@@ -20,7 +20,6 @@ pub struct MacAppInfo {
     pub executable_names: Vec<SmartString>,
 }
 
-
 fn plist_string(info: &PlistValue, key: &str) -> Option<SmartString> {
     info.as_dictionary()
         .and_then(|dict| dict.get(key))
@@ -42,7 +41,6 @@ pub fn read_bundle_info(app_bundle: &Path) -> (Option<SmartString>, Option<Smart
     let executable = plist_string(&info, "CFBundleExecutable");
     (display_name, bundle_id, executable)
 }
-
 
 fn path_stem(path: &Path) -> Option<SmartString> {
     path.file_stem()
