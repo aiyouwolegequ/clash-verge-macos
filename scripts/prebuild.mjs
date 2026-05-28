@@ -620,13 +620,13 @@ const tasks = [
   {
     name: 'verge-mihomo-alpha',
     func: async () => {
+      await getLatestAlphaVersion()
       const info = clashMetaAlpha()
       const sidecarPath = path.join(SIDECAR_DIR, info.targetFile)
       if (!FORCE && fs.existsSync(sidecarPath)) {
         log_success(`"${info.name}" already exists, skipping download`)
         return
       }
-      await getLatestAlphaVersion()
       await resolveSidecar(info)
     },
     retry: 5,
@@ -634,13 +634,13 @@ const tasks = [
   {
     name: 'verge-mihomo',
     func: async () => {
+      await getLatestReleaseVersion()
       const info = clashMeta()
       const sidecarPath = path.join(SIDECAR_DIR, info.targetFile)
       if (!FORCE && fs.existsSync(sidecarPath)) {
         log_success(`"${info.name}" already exists, skipping download`)
         return
       }
-      await getLatestReleaseVersion()
       await resolveSidecar(info)
     },
     retry: 5,
