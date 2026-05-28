@@ -436,6 +436,8 @@ impl IVerge {
             enable_dns_settings: Some(false),
             home_cards: None,
             enable_external_controller: Some(false),
+            enable_auto_delay_detection: Some(true),
+            auto_delay_detection_interval_minutes: Some(5),
             ..Self::default()
         }
     }

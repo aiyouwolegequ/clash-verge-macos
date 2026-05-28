@@ -118,7 +118,7 @@ export const CurrentProxyCard = () => {
   const { isCoreDataPending } = useCoreDataStatus()
   const { verge } = useVerge()
   const { current: currentProfile } = useProfiles()
-  const autoDelayEnabled = verge?.enable_auto_delay_detection ?? false
+  const autoDelayEnabled = verge?.enable_auto_delay_detection ?? true
   const defaultLatencyTimeout = verge?.default_latency_timeout
   const autoDelayIntervalMs = useMemo(() => {
     const rawInterval = verge?.auto_delay_detection_interval_minutes

@@ -46,7 +46,7 @@ export const MiscViewer = forwardRef<DialogRef>((props, ref) => {
         autoCheckUpdate: verge?.auto_check_update ?? true,
         enableBuiltinEnhanced: verge?.enable_builtin_enhanced ?? true,
         proxyLayoutColumn: verge?.proxy_layout_column || 6,
-        enableAutoDelayDetection: verge?.enable_auto_delay_detection ?? false,
+        enableAutoDelayDetection: verge?.enable_auto_delay_detection ?? true,
         autoDelayDetectionIntervalMinutes:
           verge?.auto_delay_detection_interval_minutes ?? 5,
         defaultLatencyTest: verge?.default_latency_test || '',
