@@ -20,15 +20,6 @@ pub struct MacAppInfo {
     pub executable_names: Vec<SmartString>,
 }
 
-#[derive(Debug, Clone)]
-pub struct AppIdentity {
-    pub app_id: SmartString,
-    pub app_name: SmartString,
-    pub bundle_id: Option<SmartString>,
-    pub bundle_path: Option<SmartString>,
-    pub executable_name: Option<SmartString>,
-    pub attribution_source: SmartString,
-}
 
 fn plist_string(info: &PlistValue, key: &str) -> Option<SmartString> {
     info.as_dictionary()
@@ -52,16 +43,6 @@ pub fn read_bundle_info(app_bundle: &Path) -> (Option<SmartString>, Option<Smart
     (display_name, bundle_id, executable)
 }
 
-fn app_bundle_from_path(path: &Path) -> Option<PathBuf> {
-    let mut current = Some(path);
-    while let Some(candidate) = current {
-        if candidate.extension().and_then(|ext| ext.to_str()) == Some("app") {
-            return Some(candidate.to_path_buf());
-        }
-        current = candidate.parent();
-    }
-    None
-}
 
 fn path_stem(path: &Path) -> Option<SmartString> {
     path.file_stem()
@@ -104,72 +85,6 @@ pub fn collect_bundle_executables(app_bundle: &Path) -> Vec<SmartString> {
     }
 
     executables
-}
-
-pub fn resolve_app_identity(
-    process_name: &str,
-    process_path: &str,
-    host: &str,
-    remote_destination: &str,
-) -> Option<AppIdentity> {
-    if !process_path.trim().is_empty() {
-        let path = Path::new(process_path);
-        if let Some(bundle) = app_bundle_from_path(path) {
-            let (display_name, bundle_id, executable) = read_bundle_info(&bundle);
-            let bundle_path = SmartString::from(bundle.to_string_lossy().as_ref());
-            let app_name = display_name
-                .or_else(|| path_stem(&bundle))
-                .unwrap_or_else(|| SmartString::from("Unknown"));
-            let app_id = bundle_id.clone().unwrap_or_else(|| bundle_path.clone());
-            let executable_name = executable.or_else(|| path_file_name(path));
-            return Some(AppIdentity {
-                app_id,
-                app_name,
-                bundle_id,
-                bundle_path: Some(bundle_path),
-                executable_name,
-                attribution_source: SmartString::from("bundle"),
-            });
-        }
-
-        let app_name = path_file_name(path).unwrap_or_else(|| SmartString::from(process_path));
-        return Some(AppIdentity {
-            app_id: SmartString::from(process_path),
-            app_name,
-            bundle_id: None,
-            bundle_path: None,
-            executable_name: path_file_name(path),
-            attribution_source: SmartString::from("path"),
-        });
-    }
-
-    if !process_name.trim().is_empty() {
-        return Some(AppIdentity {
-            app_id: SmartString::from(format!("process:{process_name}")),
-            app_name: SmartString::from(process_name),
-            bundle_id: None,
-            bundle_path: None,
-            executable_name: Some(SmartString::from(process_name)),
-            attribution_source: SmartString::from("process"),
-        });
-    }
-
-    let fallback = if !host.trim().is_empty() {
-        host
-    } else if !remote_destination.trim().is_empty() {
-        remote_destination
-    } else {
-        return None;
-    };
-
-    Some(AppIdentity {
-        app_id: SmartString::from(format!("destination:{fallback}")),
-        app_name: SmartString::from(fallback),
-        bundle_id: None,
-        bundle_path: None,
-        executable_name: None,
-        attribution_source: SmartString::from("destination"),
-    })
 }
 
 pub fn get_installed_macos_apps() -> Vec<MacAppInfo> {

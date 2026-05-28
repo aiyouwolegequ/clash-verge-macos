@@ -75,7 +75,6 @@ pub fn resolve_setup_async() {
         );
 
         init_mac_exclude_apps();
-        feat::init_app_traffic_daemon();
         Handle::refresh_clash();
         refresh_tray_menu().await;
         resolve_done();

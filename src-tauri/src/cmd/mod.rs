@@ -5,7 +5,6 @@ pub type CmdResult<T = ()> = Result<T, String>;
 
 // Command modules
 pub mod app;
-pub mod app_traffic;
 pub mod backup;
 pub mod clash;
 pub mod lightweight;
@@ -23,7 +22,6 @@ pub mod webdav;
 
 // Re-export all command functions for backwards compatibility
 pub use app::*;
-pub use app_traffic::*;
 pub use backup::*;
 pub use clash::*;
 pub use lightweight::*;

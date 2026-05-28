@@ -28,50 +28,6 @@ export async function refreshMacExcludeApps() {
   return invoke<void>('refresh_mac_exclude_apps')
 }
 
-export async function getAppTrafficStats(period: 'day' | 'week' | 'month') {
-  return invoke<
-    {
-      app_id: string
-      app_name: string
-      process_name: string
-      process_path: string
-      mode: string
-      traffic_mode: string
-      bundle_id?: string | null
-      bundle_path?: string | null
-      executable_name?: string | null
-      attribution_source: string
-      upload_bytes: number
-      download_bytes: number
-    }[]
-  >('get_app_traffic_stats', { period })
-}
-
-export async function getGlobalTrafficStats(period: 'day' | 'week' | 'month') {
-  return invoke<{ upload_bytes: number; download_bytes: number } | null>(
-    'get_global_traffic_stats',
-    { period },
-  )
-}
-
-export async function getAppTrafficDetail(
-  appId: string,
-  trafficMode: string,
-  period: 'day' | 'week' | 'month',
-) {
-  return invoke<
-    {
-      domain: string
-      upload_bytes: number
-      download_bytes: number
-    }[]
-  >('get_app_traffic_detail', { appId, trafficMode, period })
-}
-
-export async function clearAppTrafficStats() {
-  return invoke<void>('clear_app_traffic_stats')
-}
-
 export async function enhanceProfiles() {
   return (
     (await invoke<ValidationOutcome>('enhance_profiles')).status === 'valid'

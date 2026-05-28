@@ -15,7 +15,6 @@ import {
   useTheme,
 } from '@mui/material'
 import { ReactNode, memo, useMemo, useRef } from 'react'
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { TrafficErrorBoundary } from '@/components/shared/traffic-error-boundary'
@@ -24,7 +23,6 @@ import { useMemoryData } from '@/hooks/use-memory-data'
 import { useTrafficData } from '@/hooks/use-traffic-data'
 import { useVerge } from '@/hooks/use-verge'
 import { useVisibility } from '@/hooks/use-visibility'
-import { getGlobalTrafficStats } from '@/services/cmds'
 import parseTraffic from '@/utils/parse-traffic'
 
 import {
@@ -146,10 +144,6 @@ export const EnhancedTrafficStats = () => {
   const { verge } = useVerge()
   const trafficRef = useRef<EnhancedCanvasTrafficGraphRef>(null)
   const pageVisible = useVisibility()
-  const [persistentTraffic, setPersistentTraffic] = useState<{
-    upload: number
-    download: number
-  }>({ upload: 0, download: 0 })
 
   // 是否显示流量图表
   const trafficGraph = verge?.traffic_graph ?? true
@@ -165,27 +159,6 @@ export const EnhancedTrafficStats = () => {
   const {
     response: { data: connections },
   } = useConnectionData()
-
-  // 获取持久化全局流量（解决核心重启后累计值归零问题）
-  useEffect(() => {
-    const fetchPersistent = async () => {
-      try {
-        const stats = await getGlobalTrafficStats('day')
-        if (stats) {
-          setPersistentTraffic({
-            upload: stats.upload_bytes,
-            download: stats.download_bytes,
-          })
-        }
-      } catch (e) {
-        console.warn('[EnhancedTrafficStats] 获取持久化流量失败:', e)
-      }
-    }
-    fetchPersistent()
-    const timer = setInterval(fetchPersistent, 5000)
-    return () => clearInterval(timer)
-  }, [])
-
   // Canvas组件现在直接从全局Hook获取数据，无需手动添加数据点
 
   // 使用useMemo计算解析后的流量数据
@@ -193,11 +166,8 @@ export const EnhancedTrafficStats = () => {
     const [up, upUnit] = parseTraffic(traffic?.up || 0)
     const [down, downUnit] = parseTraffic(traffic?.down || 0)
     const [inuse, inuseUnit] = parseTraffic(memory?.inuse || 0)
-    // 使用持久化值替代核心实时累计值，避免核心重启归零
-    const totalUpload =
-      persistentTraffic.upload + (connections?.uploadTotal || 0)
-    const totalDownload =
-      persistentTraffic.download + (connections?.downloadTotal || 0)
+    const totalUpload = connections?.uploadTotal || 0
+    const totalDownload = connections?.downloadTotal || 0
     const [uploadTotal, uploadTotalUnit] = parseTraffic(totalUpload)
     const [downloadTotal, downloadTotalUnit] = parseTraffic(totalDownload)
 
@@ -214,7 +184,7 @@ export const EnhancedTrafficStats = () => {
       downloadTotalUnit,
       connectionsCount: connections?.activeConnections.length,
     }
-  }, [traffic, memory, connections, persistentTraffic])
+  }, [traffic, memory, connections])
 
   // 渲染流量图表 - 使用useMemo缓存渲染结果
   const trafficGraphComponent = useMemo(() => {
