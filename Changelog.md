@@ -1,3 +1,23 @@
+## v2.7.16
+
+> [!IMPORTANT]
+> 本版本聚焦安全加固，修复 Codex Security 扫描发现的 5 个问题，强化 URL 出站请求、WebDAV 传输、本地备份文件名、服务安装脚本和外部链接打开边界。
+
+### 🔒 安全修复
+
+- **服务安装命令加固**：安装 / 卸载服务时同时进行 Shell 参数转义与 AppleScript 字符串转义，防止路径中的引号或反斜杠突破管理员授权脚本。
+- **URL 出站请求防护**：订阅、图标下载和自定义延迟测试统一校验目标地址，禁止本地 / 私网 / 特殊地址，关闭重定向，固定 DNS 解析结果，并禁止代理绕过目标校验。
+- **WebDAV 传输加固**：保存配置和运行时客户端均强制使用 `https://`，拒绝旧配置中的明文 HTTP 地址，并阻止 WebDAV 重定向降级到 HTTP。
+- **本地备份文件名校验**：删除、恢复、导出和创建本地备份时仅允许单层 `.zip` 文件名，拒绝路径分隔符、`..` 和非备份文件扩展名。
+- **外部链接打开收敛**：个人配置列表的主页链接改为通过后端 `open_web_url` 打开，只允许 `http` 和 `https` scheme，避免直接调用 Tauri shell open。
+
+### ✅ 验证
+
+- 完成 Codex Security focused re-scan，5 个问题均确认修复。
+- 完成 `cargo test -p clash-verge --lib`、`cargo check -p clash-verge`、`pnpm typecheck` 验证。
+
+---
+
 ## v2.7.15
 
 > [!IMPORTANT]

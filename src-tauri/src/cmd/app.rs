@@ -30,7 +30,11 @@ pub async fn open_logs_dir() -> CmdResult<()> {
 /// 打开网页链接
 #[tauri::command]
 pub fn open_web_url(url: String) -> CmdResult<()> {
-    open::that(url.as_str()).stringify_err()
+    let parsed = tauri::Url::parse(url.as_str()).stringify_err()?;
+    match parsed.scheme() {
+        "http" | "https" => open::that(url.as_str()).stringify_err(),
+        _ => Err("only http and https URLs are allowed".into()),
+    }
 }
 
 // TODO 后续可以为前端提供接口，当前作为托盘菜单使用

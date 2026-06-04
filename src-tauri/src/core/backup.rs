@@ -52,6 +52,16 @@ impl Operation {
     }
 }
 
+fn normalize_webdav_url(url: &str) -> Result<String, Error> {
+    let trimmed = url.trim_end_matches('/');
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| Error::msg("invalid WebDAV URL"))?;
+    if parsed.scheme() != "https" {
+        return Err(Error::msg("WebDAV URL must use https"));
+    }
+
+    Ok(trimmed.into())
+}
+
 pub struct WebDavClient {
     config: ArcSwapOption<WebDavConfig>,
     clients: ArcSwap<HashMap<Operation, reqwest_dav::Client>>,
@@ -92,12 +102,7 @@ impl WebDavClient {
                 }
 
                 let config = WebDavConfig {
-                    url: verge
-                        .webdav_url
-                        .clone()
-                        .unwrap_or_default()
-                        .trim_end_matches('/')
-                        .into(),
+                    url: normalize_webdav_url(verge.webdav_url.clone().unwrap_or_default().as_str())?,
                     username: verge.webdav_username.clone().unwrap_or_default(),
                     password: verge.webdav_password.clone().unwrap_or_default(),
                 };
@@ -108,15 +113,19 @@ impl WebDavClient {
             }
         };
 
+        let webdav_url = normalize_webdav_url(config.url.as_str())?;
+
         // 创建新的客户端
         let client = reqwest_dav::ClientBuilder::new()
             .set_agent(
                 reqwest::Client::builder()
                     .use_rustls_tls()
-                    .danger_accept_invalid_certs(true)
                     .timeout(Duration::from_secs(op.timeout()))
                     .user_agent(format!("clash-verge/{APP_VERSION} ({OS} WebDAV-Client)"))
                     .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                        if attempt.url().scheme() != "https" {
+                            return attempt.error("WebDAV redirects must use https");
+                        }
                         // 允许所有请求类型的重定向，包括PUT
                         if attempt.previous().len() >= 5 {
                             attempt.error("重定向次数过多")
@@ -126,7 +135,7 @@ impl WebDavClient {
                     }))
                     .build()?,
             )
-            .set_host(config.url.into())
+            .set_host(webdav_url.into())
             .set_auth(reqwest_dav::Auth::Basic(config.username.into(), config.password.into()))
             .build()?;
 
@@ -280,4 +289,21 @@ pub async fn create_backup() -> Result<(String, PathBuf), Error> {
     zip.write_all(fs::read(dirs::profiles_path()?).await?.as_slice())?;
     zip.finish()?;
     Ok((zip_file_name, zip_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_webdav_url;
+
+    #[test]
+    fn normalize_webdav_url_requires_https() -> anyhow::Result<()> {
+        assert_eq!(
+            normalize_webdav_url("https://example.com/dav///")?,
+            "https://example.com/dav"
+        );
+        assert!(normalize_webdav_url("http://example.com/dav").is_err());
+        assert!(normalize_webdav_url("ftp://example.com/dav").is_err());
+        assert!(normalize_webdav_url("not a url").is_err());
+        Ok(())
+    }
 }

@@ -3,7 +3,7 @@ use crate::{
     core::{CoreManager, handle, tray},
     feat::clean_async,
     process::AsyncHandler,
-    utils,
+    utils::{self, network::NetworkManager},
 };
 use bytes::BytesMut;
 use clash_verge_logging::{Type, logging};
@@ -121,58 +121,33 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
     use tokio::time::Instant;
 
     let parsed = tauri::Url::parse(&url)?;
+    let destination = NetworkManager::resolve_public_destination_for_request(url.as_str())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("URL host could not be resolved"))?;
+    let connect_addr = *destination
+        .addrs
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("URL host could not be resolved"))?;
     let is_https = parsed.scheme() == "https";
     let host = parsed
         .host_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid URL: no host"))?
         .to_string();
-    let port = parsed.port().unwrap_or(if is_https { 443 } else { 80 });
-
-    let verge = Config::verge().await.latest_arc();
-    let proxy_enabled = verge.enable_system_proxy.unwrap_or(false) || verge.enable_tun_mode.unwrap_or(false);
-    let proxy_port = if proxy_enabled {
-        Some(match verge.verge_mixed_port {
-            Some(p) => p,
-            None => Config::clash().await.data_arc().get_mixed_port(),
-        })
-    } else {
-        None
-    };
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let start = Instant::now();
         let mut buf = BytesMut::with_capacity(1024);
 
         if is_https {
-            let stream = match proxy_port {
-                Some(pp) => {
-                    let mut s = TcpStream::connect(format!("127.0.0.1:{pp}")).await?;
-                    s.write_all(format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n").as_bytes())
-                        .await?;
-                    s.read_buf(&mut buf).await?;
-                    if !buf.windows(3).any(|w| w == b"200") {
-                        return Err(anyhow::anyhow!("Proxy CONNECT failed"));
-                    }
-                    s
-                }
-                None => TcpStream::connect(format!("{host}:{port}")).await?,
-            };
+            let stream = TcpStream::connect(connect_addr).await?;
             let connector = tokio_rustls::TlsConnector::from(Arc::clone(&TLS_CONFIG));
             let server_name = rustls::pki_types::ServerName::try_from(host.as_str())
                 .map_err(|_| anyhow::anyhow!("Invalid DNS name: {host}"))?
                 .to_owned();
             connector.connect(server_name, stream).await?;
         } else {
-            let (mut stream, req) = match proxy_port {
-                Some(pp) => (
-                    TcpStream::connect(format!("127.0.0.1:{pp}")).await?,
-                    format!("HEAD {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
-                ),
-                None => (
-                    TcpStream::connect(format!("{host}:{port}")).await?,
-                    format!("HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
-                ),
-            };
+            let mut stream = TcpStream::connect(connect_addr).await?;
+            let req = format!("HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
             stream.write_all(req.as_bytes()).await?;
             let _ = stream.read(&mut buf).await?;
         }

@@ -46,8 +46,9 @@ async fn uninstall_service() -> Result<()> {
 
     // On macOS, always use osascript for admin privileges (the service binary handles the rest)
     let prompt = escape_osascript_string(&clash_verge_i18n::t!("service.adminUninstallPrompt"));
-    let command =
-        format!(r#"do shell script "sudo '{uninstall_shell}'" with administrator privileges with prompt "{prompt}""#);
+    let shell_command = format!("sudo {}", shell_quote(uninstall_shell.as_str()));
+    let shell_command = escape_osascript_string(shell_command.as_str());
+    let command = format!(r#"do shell script "{shell_command}" with administrator privileges with prompt "{prompt}""#);
 
     let status = tokio::time::timeout(
         std::time::Duration::from_secs(60),
@@ -85,9 +86,12 @@ async fn install_service() -> Result<()> {
 
     let gid = tauri_plugin_clash_verge_sysinfo::current_gid();
     let prompt = escape_osascript_string(&clash_verge_i18n::t!("service.adminInstallPrompt"));
-    let command = format!(
-        r#"do shell script "sudo CLASH_VERGE_SERVICE_GID={gid} '{install_shell}'" with administrator privileges with prompt "{prompt}""#
+    let shell_command = format!(
+        "sudo CLASH_VERGE_SERVICE_GID={gid} {}",
+        shell_quote(install_shell.as_str())
     );
+    let shell_command = escape_osascript_string(shell_command.as_str());
+    let command = format!(r#"do shell script "{shell_command}" with administrator privileges with prompt "{prompt}""#);
 
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(60),
@@ -121,6 +125,13 @@ async fn install_service() -> Result<()> {
 /// 转义 osascript 字符串中的特殊字符，防止命令注入
 fn escape_osascript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn shell_quote(s: &str) -> std::string::String {
+    let mut quoted = std::string::String::from("'");
+    quoted.push_str(&s.replace('\'', r"'\''"));
+    quoted.push('\'');
+    quoted
 }
 
 fn check_output_error(output: &std::process::Output) -> Option<(i32, Cow<'_, str>)> {
@@ -469,3 +480,26 @@ impl ServiceManager {
 }
 
 pub static SERVICE_MANAGER: Lazy<Mutex<ServiceManager>> = Lazy::new(|| Mutex::new(ServiceManager::default()));
+
+#[cfg(test)]
+mod tests {
+    use super::{escape_osascript_string, shell_quote};
+
+    #[test]
+    fn shell_quote_wraps_argument() {
+        assert_eq!(shell_quote("abc"), "'abc'");
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        assert_eq!(shell_quote("a'b"), r"'a'\''b'");
+    }
+
+    #[test]
+    fn escape_osascript_string_escapes_command_quotes_and_backslashes() {
+        assert_eq!(
+            escape_osascript_string(r#"sudo '/tmp/A "quoted" \ path'"#),
+            r#"sudo '/tmp/A \"quoted\" \\ path'"#
+        );
+    }
+}

@@ -13,7 +13,7 @@ use clash_verge_logging::{Type, logging};
 use reqwest_dav::list_cmd::ListFile;
 use serde::Serialize;
 use smartstring::alias::String;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use tokio::fs;
 
 #[derive(Debug, Serialize)]
@@ -22,6 +22,30 @@ pub struct LocalBackupFile {
     pub path: String,
     pub last_modified: String,
     pub content_length: u64,
+}
+
+fn normalize_backup_filename(filename: &str) -> Result<String> {
+    let trimmed = filename.trim();
+    if trimmed.is_empty() || trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
+        return Err(anyhow!("Invalid backup file name"));
+    }
+
+    let path = Path::new(trimmed);
+    let mut components = path.components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => {}
+        _ => return Err(anyhow!("Invalid backup file name")),
+    }
+
+    let is_zip = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"));
+    if !is_zip {
+        return Err(anyhow!("Only .zip backup files are supported"));
+    }
+
+    Ok(trimmed.into())
 }
 
 /// Load restored verge.yaml from disk, merge back WebDAV creds, save, and sync memory.
@@ -155,6 +179,7 @@ where
 
     let backup_dir = local_backup_dir()?;
     let final_name = namer(file_name.as_str());
+    let final_name = normalize_backup_filename(final_name.as_str())?;
     let target_path = backup_dir.join(final_name.as_str());
 
     if let Err(err) = move_file(temp_file_path.clone(), target_path.clone()).await {
@@ -284,6 +309,7 @@ pub async fn list_local_backup() -> Result<Vec<LocalBackupFile>> {
 /// Delete local backup
 pub async fn delete_local_backup(filename: String) -> Result<()> {
     let backup_dir = local_backup_dir()?;
+    let filename = normalize_backup_filename(filename.as_str())?;
     let target_path = backup_dir.join(filename.as_str());
     if !target_path.exists() {
         logging!(warn, Type::Backup, "Local backup file not found: {}", filename);
@@ -296,6 +322,7 @@ pub async fn delete_local_backup(filename: String) -> Result<()> {
 /// Restore local backup
 pub async fn restore_local_backup(filename: String) -> Result<()> {
     let backup_dir = local_backup_dir()?;
+    let filename = normalize_backup_filename(filename.as_str())?;
     let target_path = backup_dir.join(filename.as_str());
     if !target_path.exists() {
         return Err(anyhow!("Backup file not found: {}", filename));
@@ -321,6 +348,7 @@ pub async fn restore_local_backup(filename: String) -> Result<()> {
 /// Export local backup file to user selected destination
 pub async fn export_local_backup(filename: String, destination: String) -> Result<()> {
     let backup_dir = local_backup_dir()?;
+    let filename = normalize_backup_filename(filename.as_str())?;
     let source_path = backup_dir.join(filename.as_str());
     if !source_path.exists() {
         return Err(anyhow!("Backup file not found: {}", filename));
@@ -336,4 +364,34 @@ pub async fn export_local_backup(filename: String, destination: String) -> Resul
         .map(|_| ())
         .map_err(|err| anyhow!("Failed to export backup file: {err:#?}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_backup_filename;
+
+    #[test]
+    fn normalize_backup_filename_accepts_plain_zip_names() -> anyhow::Result<()> {
+        assert_eq!(normalize_backup_filename("backup.zip")?, "backup.zip");
+        assert_eq!(normalize_backup_filename("  macos-backup.ZIP  ")?, "macos-backup.ZIP");
+        Ok(())
+    }
+
+    #[test]
+    fn normalize_backup_filename_rejects_paths_and_non_zip_names() {
+        for filename in [
+            "",
+            "../backup.zip",
+            "nested/backup.zip",
+            "nested\\backup.zip",
+            "/tmp/backup.zip",
+            "backup.tar",
+            "backup..zip",
+        ] {
+            assert!(
+                normalize_backup_filename(filename).is_err(),
+                "filename should be rejected: {filename}"
+            );
+        }
+    }
 }

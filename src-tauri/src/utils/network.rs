@@ -1,14 +1,19 @@
 use crate::config::Config;
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use reqwest::{
     Client, Proxy, StatusCode,
     header::{HeaderMap, HeaderValue, USER_AGENT},
 };
 use smartstring::alias::String;
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 use sysproxy::Sysproxy;
 use tauri::Url;
+use tokio::net::lookup_host;
 
 #[derive(Debug)]
 pub struct HttpResponse {
@@ -68,10 +73,11 @@ impl NetworkManager {
         accept_invalid_certs: bool,
         timeout_secs: Option<u64>,
         tls_root_mode: TlsRootMode,
+        pinned_destination: Option<&ValidatedDestination>,
     ) -> Result<Client> {
         let mut builder = Client::builder()
             .tls_backend_rustls()
-            .redirect(reqwest::redirect::Policy::limited(10))
+            .redirect(reqwest::redirect::Policy::none())
             .tcp_keepalive(Duration::from_secs(60))
             .pool_max_idle_per_host(0)
             .pool_idle_timeout(None);
@@ -89,6 +95,10 @@ impl NetworkManager {
         }
 
         builder = builder.default_headers(default_headers);
+
+        if let Some(destination) = pinned_destination {
+            builder = builder.resolve_to_addrs(destination.host.as_str(), destination.addrs.as_slice());
+        }
 
         // SSL/TLS
         if accept_invalid_certs {
@@ -161,6 +171,11 @@ impl NetworkManager {
         detail.contains("protocolversion") || detail.contains("protocol version")
     }
 
+    pub async fn ensure_public_destination(url: &str) -> Result<()> {
+        let parsed = Url::parse(url)?;
+        resolve_public_destination(&parsed).await.map(|_| ())
+    }
+
     pub async fn create_request(
         &self,
         proxy_type: ProxyType,
@@ -174,10 +189,12 @@ impl NetworkManager {
             user_agent,
             accept_invalid_certs,
             TlsRootMode::PlatformVerifier,
+            None,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn get_with_tls_mode(
         &self,
         url: &str,
@@ -186,6 +203,7 @@ impl NetworkManager {
         user_agent: Option<String>,
         accept_invalid_certs: bool,
         tls_root_mode: TlsRootMode,
+        pinned_destination: Option<&ValidatedDestination>,
     ) -> Result<HttpResponse> {
         let mut parsed = Url::parse(url)?;
         let mut extra_headers = HeaderMap::new();
@@ -215,6 +233,7 @@ impl NetworkManager {
                 user_agent,
                 accept_invalid_certs,
                 tls_root_mode,
+                pinned_destination,
             )
             .await?;
 
@@ -250,6 +269,7 @@ impl NetworkManager {
         user_agent: Option<String>,
         accept_invalid_certs: bool,
         tls_root_mode: TlsRootMode,
+        pinned_destination: Option<&ValidatedDestination>,
     ) -> Result<Client> {
         let proxy_url: Option<std::string::String> = match proxy_type {
             ProxyType::None => None,
@@ -284,7 +304,16 @@ impl NetworkManager {
             );
         }
 
-        self.build_client(proxy_url, headers, accept_invalid_certs, timeout_secs, tls_root_mode)
+        let pinned_destination = if proxy_url.is_some() { None } else { pinned_destination };
+
+        self.build_client(
+            proxy_url,
+            headers,
+            accept_invalid_certs,
+            timeout_secs,
+            tls_root_mode,
+            pinned_destination,
+        )
     }
 
     pub async fn get_with_interrupt(
@@ -295,6 +324,11 @@ impl NetworkManager {
         user_agent: Option<String>,
         accept_invalid_certs: bool,
     ) -> Result<HttpResponse> {
+        let pinned_destination = Self::resolve_public_destination_for_request(url).await?;
+        if !matches!(proxy_type, ProxyType::None) {
+            bail!("proxied subscription fetches are disabled for destination enforcement");
+        }
+
         let platform_result = self
             .get_with_tls_mode(
                 url,
@@ -303,6 +337,7 @@ impl NetworkManager {
                 user_agent.clone(),
                 accept_invalid_certs,
                 TlsRootMode::PlatformVerifier,
+                pinned_destination.as_ref(),
             )
             .await;
 
@@ -316,6 +351,7 @@ impl NetworkManager {
                     user_agent,
                     accept_invalid_certs,
                     TlsRootMode::StaticWebpkiRoots,
+                    pinned_destination.as_ref(),
                 )
                 .await
                 .map_err(|fallback_err| {
@@ -323,5 +359,173 @@ impl NetworkManager {
                 }),
             Err(err) => Err(err),
         }
+    }
+
+    pub async fn resolve_public_destination_for_request(url: &str) -> Result<Option<ValidatedDestination>> {
+        let parsed = Url::parse(url)?;
+        let destination = resolve_public_destination(&parsed).await?;
+        Ok(Some(destination))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ValidatedDestination {
+    pub(crate) host: std::string::String,
+    pub(crate) addrs: Vec<SocketAddr>,
+}
+
+async fn resolve_public_destination(url: &Url) -> Result<ValidatedDestination> {
+    match url.scheme() {
+        "http" | "https" => {}
+        scheme => bail!("unsupported url scheme: {scheme}"),
+    }
+
+    let host = url.host_str().ok_or_else(|| anyhow!("URL missing host"))?;
+    if is_localhost_name(host) {
+        bail!("localhost destinations are not allowed");
+    }
+
+    let port = url.port_or_known_default().ok_or_else(|| anyhow!("URL missing port"))?;
+
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if !is_public_ip(ip) {
+            bail!("private or local destinations are not allowed");
+        }
+        return Ok(ValidatedDestination {
+            host: host.into(),
+            addrs: vec![SocketAddr::new(ip, port)],
+        });
+    }
+
+    let mut saw_addr = false;
+    let mut addrs = Vec::new();
+
+    for addr in lookup_host((host, port)).await? {
+        saw_addr = true;
+        if !is_public_ip(addr.ip()) {
+            bail!("private or local destinations are not allowed");
+        }
+        addrs.push(addr);
+    }
+
+    if !saw_addr {
+        bail!("URL host could not be resolved");
+    }
+
+    Ok(ValidatedDestination {
+        host: host.into(),
+        addrs,
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn is_localhost_name(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost") || host.eq_ignore_ascii_case("localhost.")
+}
+
+fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_public_ipv4(ip),
+        IpAddr::V6(ip) => is_public_ipv6(ip),
+    }
+}
+
+fn is_public_ipv4(ip: Ipv4Addr) -> bool {
+    if ip.is_unspecified() || ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_multicast() {
+        return false;
+    }
+
+    let [a, b, c, _] = ip.octets();
+    if a == 0 || a >= 240 {
+        return false;
+    }
+
+    if a == 100 && (64..=127).contains(&b) {
+        return false;
+    }
+
+    if a == 192 && b == 0 && c == 0 {
+        return false;
+    }
+
+    if a == 192 && b == 0 && c == 2 {
+        return false;
+    }
+
+    if a == 198 && b == 51 && c == 100 {
+        return false;
+    }
+
+    if a == 198 && (18..=19).contains(&b) {
+        return false;
+    }
+
+    if a == 203 && b == 0 && c == 113 {
+        return false;
+    }
+
+    true
+}
+
+fn is_public_ipv6(ip: Ipv6Addr) -> bool {
+    if let Some(ipv4) = ip.to_ipv4_mapped()
+        && !is_public_ipv4(ipv4)
+    {
+        return false;
+    }
+
+    if ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_multicast()
+        || ip.is_unique_local()
+        || ip.is_unicast_link_local()
+    {
+        return false;
+    }
+
+    let segments = ip.segments();
+    if segments[0] == 0x2001 && segments[1] == 0x0db8 {
+        return false;
+    }
+
+    if (segments[0] & 0xffc0) == 0xfec0 {
+        return false;
+    }
+
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NetworkManager;
+
+    #[tokio::test]
+    async fn ensure_public_destination_rejects_local_targets() {
+        assert!(
+            NetworkManager::ensure_public_destination("http://127.0.0.1")
+                .await
+                .is_err()
+        );
+        assert!(NetworkManager::ensure_public_destination("http://[::1]").await.is_err());
+        assert!(
+            NetworkManager::ensure_public_destination("https://localhost")
+                .await
+                .is_err()
+        );
+        assert!(
+            NetworkManager::ensure_public_destination("ftp://example.com")
+                .await
+                .is_err()
+        );
+        assert!(
+            NetworkManager::ensure_public_destination("http://[::ffff:127.0.0.1]")
+                .await
+                .is_err()
+        );
+        assert!(
+            NetworkManager::ensure_public_destination("http://198.18.0.1")
+                .await
+                .is_err()
+        );
     }
 }

@@ -6,10 +6,16 @@ use crate::{
 };
 use reqwest_dav::list_cmd::ListFile;
 use smartstring::alias::String;
+use tauri::Url;
 
 /// 保存 WebDAV 配置
 #[tauri::command]
 pub async fn save_webdav_config(url: String, username: String, password: String) -> CmdResult<()> {
+    let parsed = Url::parse(url.as_str()).map_err(|_| "invalid WebDAV URL")?;
+    if parsed.scheme() != "https" {
+        return Err("WebDAV URL must use https".into());
+    }
+
     let patch = IVerge {
         webdav_url: Some(url),
         webdav_username: Some(username),

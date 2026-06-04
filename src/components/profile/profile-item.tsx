@@ -17,7 +17,6 @@ import {
   Typography,
 } from '@mui/material'
 import { listen } from '@tauri-apps/api/event'
-import { open } from '@tauri-apps/plugin-shell'
 import { useLockFn } from 'ahooks'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
@@ -30,6 +29,7 @@ import { RulesEditorViewer } from '@/components/profile/rules-editor-viewer'
 import { useEditorDocument } from '@/hooks/use-editor-document'
 import {
   getNextUpdateTime,
+  openWebUrl,
   readProfileFile,
   saveProfileFile,
   updateProfile,
@@ -318,7 +318,9 @@ export const ProfileItem = (props: Props) => {
 
   const onOpenHome = () => {
     setAnchorEl(null)
-    open(itemData.home ?? '')
+    if (itemData.home) {
+      openWebUrl(itemData.home)
+    }
   }
 
   const onEditInfo = () => {

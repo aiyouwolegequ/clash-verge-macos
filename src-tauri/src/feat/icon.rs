@@ -1,6 +1,9 @@
 use crate::{
     cmd::{CmdResult, StringifyErr as _},
-    utils::dirs::{self, PathBufExec as _},
+    utils::{
+        dirs::{self, PathBufExec as _},
+        network::NetworkManager,
+    },
 };
 use clash_verge_logging::{Type, logging};
 use smartstring::alias::String;
@@ -86,7 +89,19 @@ pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String>
     let temp_name = format!("{icon_name}.downloading");
     let temp_path = ensure_icon_cache_target(&icon_cache_dir, temp_name.as_str())?;
 
-    let response = reqwest::get(url.as_str()).await.stringify_err()?;
+    let pinned_destination = NetworkManager::resolve_public_destination_for_request(url.as_str())
+        .await
+        .stringify_err()?;
+
+    let mut client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy();
+    if let Some(destination) = pinned_destination.as_ref() {
+        client = client.resolve_to_addrs(destination.host.as_str(), destination.addrs.as_slice());
+    }
+    let client = client.build().stringify_err()?;
+
+    let response = client.get(url.as_str()).send().await.stringify_err()?;
     let response = response.error_for_status().stringify_err()?;
     let content = response.bytes().await.stringify_err()?;
 
