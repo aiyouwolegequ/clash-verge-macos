@@ -175,7 +175,7 @@ impl NetworkManager {
 
     pub async fn ensure_public_destination(url: &str) -> Result<()> {
         let parsed = Url::parse(url)?;
-        resolve_public_destination(&parsed).await.map(|_| ())
+        resolve_public_destination(&parsed, false).await.map(|_| ())
     }
 
     pub async fn create_request(
@@ -207,6 +207,8 @@ impl NetworkManager {
         tls_root_mode: TlsRootMode,
         pinned_destination: Option<&ValidatedDestination>,
     ) -> Result<HttpResponse> {
+        let proxy_url = Self::resolve_proxy_url(proxy_type).await;
+        let is_proxied = proxy_url.is_some();
         let mut current_url = Url::parse(url)?;
         let mut current_pinned_destination = pinned_destination.cloned();
 
@@ -218,13 +220,13 @@ impl NetworkManager {
                     if let Some(destination) = current_pinned_destination.as_ref() {
                         destination.clone()
                     } else {
-                        Self::resolve_public_destination_for_request(current_url.as_str())
+                        Self::resolve_public_destination_for_request(current_url.as_str(), is_proxied)
                             .await?
                             .ok_or_else(|| anyhow!("URL host could not be resolved"))?
                     }
                 }
                 ProxyType::Localhost | ProxyType::System => {
-                    Self::resolve_public_destination_for_request(current_url.as_str())
+                    Self::resolve_public_destination_for_request(current_url.as_str(), is_proxied)
                         .await?
                         .ok_or_else(|| anyhow!("URL host could not be resolved"))?
                 }
@@ -316,16 +318,8 @@ impl NetworkManager {
         }
     }
 
-    async fn create_request_with_tls_mode(
-        &self,
-        proxy_type: ProxyType,
-        timeout_secs: Option<u64>,
-        user_agent: Option<String>,
-        accept_invalid_certs: bool,
-        tls_root_mode: TlsRootMode,
-        pinned_destination: Option<&ValidatedDestination>,
-    ) -> Result<Client> {
-        let proxy_url: Option<std::string::String> = match proxy_type {
+    pub async fn resolve_proxy_url(proxy_type: ProxyType) -> Option<std::string::String> {
+        match proxy_type {
             ProxyType::None => None,
             ProxyType::Localhost => {
                 let port = {
@@ -344,7 +338,19 @@ impl NetworkManager {
                     None
                 }
             }
-        };
+        }
+    }
+
+    async fn create_request_with_tls_mode(
+        &self,
+        proxy_type: ProxyType,
+        timeout_secs: Option<u64>,
+        user_agent: Option<String>,
+        accept_invalid_certs: bool,
+        tls_root_mode: TlsRootMode,
+        pinned_destination: Option<&ValidatedDestination>,
+    ) -> Result<Client> {
+        let proxy_url = Self::resolve_proxy_url(proxy_type).await;
 
         let mut headers = HeaderMap::new();
 
@@ -378,7 +384,9 @@ impl NetworkManager {
         user_agent: Option<String>,
         accept_invalid_certs: bool,
     ) -> Result<HttpResponse> {
-        let pinned_destination = Self::resolve_public_destination_for_request(url).await?;
+        let proxy_url = Self::resolve_proxy_url(proxy_type).await;
+        let is_proxied = proxy_url.is_some();
+        let pinned_destination = Self::resolve_public_destination_for_request(url, is_proxied).await?;
 
         let platform_result = self
             .get_with_tls_mode(
@@ -412,9 +420,12 @@ impl NetworkManager {
         }
     }
 
-    pub async fn resolve_public_destination_for_request(url: &str) -> Result<Option<ValidatedDestination>> {
+    pub async fn resolve_public_destination_for_request(
+        url: &str,
+        is_proxied: bool,
+    ) -> Result<Option<ValidatedDestination>> {
         let parsed = Url::parse(url)?;
-        let destination = resolve_public_destination(&parsed).await?;
+        let destination = resolve_public_destination(&parsed, is_proxied).await?;
         Ok(Some(destination))
     }
 }
@@ -425,7 +436,7 @@ pub struct ValidatedDestination {
     pub(crate) addrs: Vec<SocketAddr>,
 }
 
-async fn resolve_public_destination(url: &Url) -> Result<ValidatedDestination> {
+async fn resolve_public_destination(url: &Url, is_proxied: bool) -> Result<ValidatedDestination> {
     match url.scheme() {
         "http" | "https" => {}
         scheme => bail!("unsupported url scheme: {scheme}"),
@@ -445,6 +456,13 @@ async fn resolve_public_destination(url: &Url) -> Result<ValidatedDestination> {
         return Ok(ValidatedDestination {
             host: host.into(),
             addrs: vec![SocketAddr::new(ip, port)],
+        });
+    }
+
+    if is_proxied {
+        return Ok(ValidatedDestination {
+            host: host.into(),
+            addrs: Vec::new(),
         });
     }
 

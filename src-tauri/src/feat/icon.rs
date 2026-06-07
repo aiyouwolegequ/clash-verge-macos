@@ -89,7 +89,7 @@ pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String>
     let temp_name = format!("{icon_name}.downloading");
     let temp_path = ensure_icon_cache_target(&icon_cache_dir, temp_name.as_str())?;
 
-    let pinned_destination = NetworkManager::resolve_public_destination_for_request(url.as_str())
+    let pinned_destination = NetworkManager::resolve_public_destination_for_request(url.as_str(), false)
         .await
         .stringify_err()?;
 

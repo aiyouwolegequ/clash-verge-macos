@@ -121,7 +121,7 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
     use tokio::time::Instant;
 
     let parsed = tauri::Url::parse(&url)?;
-    let destination = NetworkManager::resolve_public_destination_for_request(url.as_str())
+    let destination = NetworkManager::resolve_public_destination_for_request(url.as_str(), false)
         .await?
         .ok_or_else(|| anyhow::anyhow!("URL host could not be resolved"))?;
     let connect_addr = *destination
