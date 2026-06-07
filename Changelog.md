@@ -1,3 +1,21 @@
+## v2.7.17
+
+> [!IMPORTANT]
+> 本版本修复 v2.7.16 安全加固后引入的订阅更新回归问题，恢复常见订阅链接的跳转下载和代理下载能力，同时保留出站目标安全校验。
+
+### 🐞 修复问题
+
+- **订阅重定向修复**：远程订阅下载支持最多 10 次 `http` / `https` 重定向，并在每次跳转后重新校验目标地址，修复部分订阅链接返回 302 后无法更新的问题。
+- **代理更新修复**：恢复使用 Clash 代理和系统代理更新订阅的能力，修复部分订阅必须经代理访问时更新失败、节点列表为空的问题。
+- **安全边界保持**：订阅下载继续拒绝本机、私网、特殊地址以及非 `http` / `https` 跳转，避免回退到不受控的出站请求行为。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo test -p clash-verge --lib`、`cargo check`、`cargo clippy --all-targets -- -D warnings`、`pnpm typecheck`、`pnpm lint`、`pnpm format:check` 验证。
+- 完成 `pnpm build`，生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.7.17_aarch64.dmg`，SHA256：`0d94c0f5b856cce1bbab5ce7a95423a06b360d79187cde55ac62e8828dbb053e`。
+
+---
+
 ## v2.7.16
 
 > [!IMPORTANT]

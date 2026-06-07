@@ -1,9 +1,9 @@
 use crate::config::Config;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use reqwest::{
     Client, Proxy, StatusCode,
-    header::{HeaderMap, HeaderValue, USER_AGENT},
+    header::{HeaderMap, HeaderValue, LOCATION, USER_AGENT},
 };
 use smartstring::alias::String;
 use std::{
@@ -62,6 +62,8 @@ impl Default for NetworkManager {
 }
 
 impl NetworkManager {
+    const MAX_REDIRECTS: usize = 10;
+
     pub const fn new() -> Self {
         Self
     }
@@ -205,13 +207,91 @@ impl NetworkManager {
         tls_root_mode: TlsRootMode,
         pinned_destination: Option<&ValidatedDestination>,
     ) -> Result<HttpResponse> {
-        let mut parsed = Url::parse(url)?;
+        let mut current_url = Url::parse(url)?;
+        let mut current_pinned_destination = pinned_destination.cloned();
+
+        for redirect_count in 0..=Self::MAX_REDIRECTS {
+            let (request_url, extra_headers) = Self::prepare_request_url_and_headers(&current_url)?;
+
+            let pinned_destination = match proxy_type {
+                ProxyType::None => {
+                    if let Some(destination) = current_pinned_destination.as_ref() {
+                        destination.clone()
+                    } else {
+                        Self::resolve_public_destination_for_request(current_url.as_str())
+                            .await?
+                            .ok_or_else(|| anyhow!("URL host could not be resolved"))?
+                    }
+                }
+                ProxyType::Localhost | ProxyType::System => {
+                    Self::resolve_public_destination_for_request(current_url.as_str())
+                        .await?
+                        .ok_or_else(|| anyhow!("URL host could not be resolved"))?
+                }
+            };
+
+            // 创建请求
+            let client = self
+                .create_request_with_tls_mode(
+                    proxy_type,
+                    timeout_secs,
+                    user_agent.clone(),
+                    accept_invalid_certs,
+                    tls_root_mode,
+                    Some(&pinned_destination),
+                )
+                .await?;
+
+            let mut request_builder = client.get(request_url);
+
+            for (key, value) in extra_headers.iter() {
+                request_builder = request_builder.header(key, value);
+            }
+
+            let response = match request_builder.send().await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    return Err(Self::context_reqwest_error(e, "Request failed"));
+                }
+            };
+
+            let status = response.status();
+            let headers = response.headers().to_owned();
+
+            if status.is_redirection()
+                && let Some(location) = headers.get(LOCATION)
+            {
+                if redirect_count >= Self::MAX_REDIRECTS {
+                    bail!("too many redirects while fetching remote profile");
+                }
+
+                let location = location.to_str().context("redirect location is not valid UTF-8")?;
+                current_url = Self::resolve_redirect_url(&current_url, location)?;
+                current_pinned_destination = None;
+                continue;
+            }
+
+            let body = match response.text().await {
+                Ok(text) => text.into(),
+                Err(e) => {
+                    return Err(Self::context_reqwest_error(e, "Failed to read response body"));
+                }
+            };
+
+            return Ok(HttpResponse::new(status, headers, body));
+        }
+
+        bail!("too many redirects while fetching remote profile")
+    }
+
+    fn prepare_request_url_and_headers(url: &Url) -> Result<(Url, HeaderMap)> {
+        let mut request_url = url.clone();
         let mut extra_headers = HeaderMap::new();
 
-        if !parsed.username().is_empty()
-            && let Some(pass) = parsed.password()
+        if !request_url.username().is_empty()
+            && let Some(pass) = request_url.password()
         {
-            let username = percent_encoding::percent_decode_str(parsed.username())
+            let username = percent_encoding::percent_decode_str(request_url.username())
                 .decode_utf8_lossy()
                 .into_owned();
             let password = percent_encoding::percent_decode_str(pass)
@@ -222,44 +302,18 @@ impl NetworkManager {
             extra_headers.insert("Authorization", HeaderValue::from_str(&format!("Basic {}", encoded))?);
         }
 
-        parsed.set_username("").ok();
-        parsed.set_password(None).ok();
+        request_url.set_username("").ok();
+        request_url.set_password(None).ok();
 
-        // 创建请求
-        let client = self
-            .create_request_with_tls_mode(
-                proxy_type,
-                timeout_secs,
-                user_agent,
-                accept_invalid_certs,
-                tls_root_mode,
-                pinned_destination,
-            )
-            .await?;
+        Ok((request_url, extra_headers))
+    }
 
-        let mut request_builder = client.get(parsed);
-
-        for (key, value) in extra_headers.iter() {
-            request_builder = request_builder.header(key, value);
+    fn resolve_redirect_url(current_url: &Url, location: &str) -> Result<Url> {
+        let next_url = current_url.join(location.trim())?;
+        match next_url.scheme() {
+            "http" | "https" => Ok(next_url),
+            scheme => bail!("unsupported redirect url scheme: {scheme}"),
         }
-
-        let response = match request_builder.send().await {
-            Ok(resp) => resp,
-            Err(e) => {
-                return Err(Self::context_reqwest_error(e, "Request failed"));
-            }
-        };
-
-        let status = response.status();
-        let headers = response.headers().to_owned();
-        let body = match response.text().await {
-            Ok(text) => text.into(),
-            Err(e) => {
-                return Err(Self::context_reqwest_error(e, "Failed to read response body"));
-            }
-        };
-
-        Ok(HttpResponse::new(status, headers, body))
     }
 
     async fn create_request_with_tls_mode(
@@ -325,9 +379,6 @@ impl NetworkManager {
         accept_invalid_certs: bool,
     ) -> Result<HttpResponse> {
         let pinned_destination = Self::resolve_public_destination_for_request(url).await?;
-        if !matches!(proxy_type, ProxyType::None) {
-            bail!("proxied subscription fetches are disabled for destination enforcement");
-        }
 
         let platform_result = self
             .get_with_tls_mode(
@@ -498,6 +549,8 @@ fn is_public_ipv6(ip: Ipv6Addr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::NetworkManager;
+    use anyhow::Result;
+    use tauri::Url;
 
     #[tokio::test]
     async fn ensure_public_destination_rejects_local_targets() {
@@ -527,5 +580,17 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[test]
+    fn resolve_redirect_url_limits_scheme_and_supports_relative_location() -> Result<()> {
+        let current = Url::parse("https://example.com/sub/path?token=1")?;
+        let next = NetworkManager::resolve_redirect_url(&current, "../download/config.yaml")?;
+        assert_eq!(next.as_str(), "https://example.com/download/config.yaml");
+
+        assert!(NetworkManager::resolve_redirect_url(&current, "file:///etc/passwd").is_err());
+        assert!(NetworkManager::resolve_redirect_url(&current, "ftp://example.com/config.yaml").is_err());
+
+        Ok(())
     }
 }
