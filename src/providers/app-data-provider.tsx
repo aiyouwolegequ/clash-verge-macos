@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { listen } from '@tauri-apps/api/event'
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
+  BaseConfig,
   getBaseConfig,
   getRuleProviders,
   getRules,
@@ -48,6 +49,39 @@ function useStableFn<T extends (...args: any[]) => any>(fn: T): T {
   return useCallback((...args: Parameters<T>) => ref.current(...args), []) as T
 }
 
+type ProxiesData = Awaited<ReturnType<typeof calcuProxies>>
+
+function useLastUsableData<T>(
+  data: T | undefined,
+  isUsable: (value: T | undefined) => value is T,
+): T | undefined {
+  const lastUsableRef = useRef<T | undefined>(undefined)
+
+  if (isUsable(data)) {
+    lastUsableRef.current = data
+  }
+
+  return isUsable(data) ? data : lastUsableRef.current
+}
+
+const hasUsableProxiesData = (
+  data: ProxiesData | undefined,
+): data is ProxiesData => {
+  if (!data) return false
+
+  return Boolean(
+    data.groups?.length ||
+      data.global?.all?.length ||
+      data.proxies?.some(
+        (proxy) => proxy?.name && !['DIRECT', 'REJECT'].includes(proxy.name),
+      ),
+  )
+}
+
+const hasUsableClashConfig = (
+  data: BaseConfig | undefined,
+): data is BaseConfig => data != null
+
 // 全局数据提供者组件
 export const AppDataProvider = ({
   children,
@@ -57,8 +91,8 @@ export const AppDataProvider = ({
   const { verge } = useVerge()
 
   const {
-    data: proxiesData,
-    isPending: isProxiesPending,
+    data: rawProxiesData,
+    isPending: rawIsProxiesPending,
     refetch: _refetchProxy,
   } = useQuery({
     queryKey: ['getProxies'],
@@ -67,14 +101,19 @@ export const AppDataProvider = ({
   })
 
   const {
-    data: clashConfig,
-    isPending: isClashConfigPending,
+    data: rawClashConfig,
+    isPending: rawIsClashConfigPending,
     refetch: _refetchClashConfig,
   } = useQuery({
     queryKey: ['getClashConfig'],
     queryFn: getBaseConfig,
     ...TQ_MIHOMO,
   })
+
+  const proxiesData = useLastUsableData(rawProxiesData, hasUsableProxiesData)
+  const clashConfig = useLastUsableData(rawClashConfig, hasUsableClashConfig)
+  const isProxiesPending = rawIsProxiesPending && !proxiesData
+  const isClashConfigPending = rawIsClashConfigPending && !clashConfig
 
   const { data: proxyProviders, refetch: _refetchProxyProviders } = useQuery({
     queryKey: ['getProxyProviders'],

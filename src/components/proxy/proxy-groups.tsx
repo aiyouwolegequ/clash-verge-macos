@@ -166,6 +166,7 @@ export const ProxyGroups = (props: Props) => {
   const showScrollTopRef = useRef(false)
   const activeStickyIndexRef = useRef<number | null>(null)
   const restoredScrollKeyRef = useRef<string | null>(null)
+  const autoCheckInProgressRef = useRef(false)
   const [showScrollTop, setShowScrollTop] = useState(false)
   const scrollPositionKey = useMemo(
     () =>
@@ -403,12 +404,10 @@ export const ProxyGroups = (props: Props) => {
 
       if (providers.size) {
         debugLog(`[ProxyGroups] 发现提供者，数量: ${providers.size}`)
-        Promise.allSettled(
+        await Promise.allSettled(
           [...providers].map((p) => healthcheckProxyProvider(p)),
-        ).then(() => {
-          debugLog(`[ProxyGroups] 提供者健康检查完成`)
-          onProxies()
-        })
+        )
+        debugLog(`[ProxyGroups] 提供者健康检查完成`)
       }
 
       const names = proxies.filter((p) => !p!.provider).map((p) => p!.name)
@@ -418,7 +417,7 @@ export const ProxyGroups = (props: Props) => {
       debugLog(`[ProxyGroups] 测试URL: ${url}, 超时: ${timeout}ms`)
 
       try {
-        await Promise.race([
+        await Promise.allSettled([
           delayManager.checkListDelay(names, groupName, timeout),
           delayGroup(groupName, url, timeout).then((result) => {
             debugLog(
@@ -435,7 +434,9 @@ export const ProxyGroups = (props: Props) => {
         if (headState?.sortType === 1) {
           onHeadState(groupName, { sortType: headState.sortType })
         }
-        onProxies()
+        await onProxies().catch((error) => {
+          console.error('[ProxyGroups] 刷新代理数据失败:', error)
+        })
       }
     }),
   )
@@ -452,53 +453,68 @@ export const ProxyGroups = (props: Props) => {
 
     const autoCheckAndSwitch = async () => {
       if (!availableGroups?.length) return
+      if (autoCheckInProgressRef.current) return
 
-      for (const group of availableGroups) {
-        if (!['Selector', 'URLTest', 'Fallback'].includes(group.type)) continue
-        if (!group.all?.length) continue
+      autoCheckInProgressRef.current = true
 
-        const currentProxy = group.all.find(
-          (p: IProxyItem) => p.name === group.now,
-        )
-        if (!currentProxy) continue
+      try {
+        for (const group of availableGroups) {
+          if (!['Selector', 'URLTest', 'Fallback'].includes(group.type)) {
+            continue
+          }
+          if (!group.all?.length) continue
 
-        const currentDelay = delayManager.getDelayFix(currentProxy, group.name)
+          const currentProxy = group.all.find(
+            (p: IProxyItem) => p.name === group.now,
+          )
+          if (!currentProxy) continue
 
-        // 没有数据或已超时，先触发测试
-        if (currentDelay < 0 || isTimeout(currentDelay)) {
-          try {
-            await handleCheckAll(group.name)
-          } catch (e) {
-            console.error(`[AutoCheck] 延迟测试失败: ${group.name}`, e)
+          const currentDelay = delayManager.getDelayFix(
+            currentProxy,
+            group.name,
+          )
+
+          // 没有数据或已超时，先触发测试
+          if (currentDelay < 0 || isTimeout(currentDelay)) {
+            try {
+              await handleCheckAll(group.name)
+            } catch (e) {
+              console.error(`[AutoCheck] 延迟测试失败: ${group.name}`, e)
+            }
+          }
+
+          // 测试后再判断，若仍超时则自动切换
+          const afterDelay = delayManager.getDelayFix(currentProxy, group.name)
+          if (isTimeout(afterDelay)) {
+            const candidates = group.all
+              .map((p: IProxyItem) => ({
+                proxy: p,
+                delay: delayManager.getDelayFix(p, group.name),
+              }))
+              .filter(
+                (c: { proxy: IProxyItem; delay: number }) =>
+                  c.delay > 0 && c.delay < timeout && c.delay <= 1e5,
+              )
+              .sort(
+                (
+                  a: { proxy: IProxyItem; delay: number },
+                  b: { proxy: IProxyItem; delay: number },
+                ) => a.delay - b.delay,
+              )
+
+            if (
+              candidates.length > 0 &&
+              candidates[0].proxy.name !== group.now
+            ) {
+              console.log(
+                `[AutoSwitch] ${group.name}: ${group.now} -> ${candidates[0].proxy.name} (${candidates[0].delay}ms)`,
+              )
+              handleChangeProxyRef.current(group, candidates[0].proxy)
+            }
           }
         }
-
-        // 测试后再判断，若仍超时则自动切换
-        const afterDelay = delayManager.getDelayFix(currentProxy, group.name)
-        if (isTimeout(afterDelay)) {
-          const candidates = group.all
-            .map((p: IProxyItem) => ({
-              proxy: p,
-              delay: delayManager.getDelayFix(p, group.name),
-            }))
-            .filter(
-              (c: { proxy: IProxyItem; delay: number }) =>
-                c.delay > 0 && c.delay < timeout && c.delay <= 1e5,
-            )
-            .sort(
-              (
-                a: { proxy: IProxyItem; delay: number },
-                b: { proxy: IProxyItem; delay: number },
-              ) => a.delay - b.delay,
-            )
-
-          if (candidates.length > 0 && candidates[0].proxy.name !== group.now) {
-            console.log(
-              `[AutoSwitch] ${group.name}: ${group.now} → ${candidates[0].proxy.name} (${candidates[0].delay}ms)`,
-            )
-            handleChangeProxyRef.current(group, candidates[0].proxy)
-          }
-        }
+      } finally {
+        autoCheckInProgressRef.current = false
       }
     }
 

@@ -589,7 +589,9 @@ export const CurrentProxyCard = () => {
       )
     } finally {
       autoCheckInProgressRef.current = false
-      refreshProxy()
+      await refreshProxy().catch((error) => {
+        console.error('[CurrentProxyCard] 刷新代理数据失败:', error)
+      })
       if (sortType === 1) {
         setDelaySortRefresh((prev) => prev + 1)
       }
@@ -730,7 +732,7 @@ export const CurrentProxyCard = () => {
       debugLog(`[CurrentProxyCard] 测试URL: ${url}, 超时: ${timeout}ms`)
 
       try {
-        await Promise.race([
+        await Promise.allSettled([
           delayManager.checkListDelay(proxyNames, groupName, timeout),
           delayGroup(groupName, url, timeout),
         ])
@@ -743,7 +745,9 @@ export const CurrentProxyCard = () => {
       }
     }
 
-    refreshProxy()
+    await refreshProxy().catch((error) => {
+      console.error('[CurrentProxyCard] 刷新代理数据失败:', error)
+    })
     if (sortType === 1) {
       setDelaySortRefresh((prev) => prev + 1)
     }
@@ -921,7 +925,7 @@ export const CurrentProxyCard = () => {
         </Box>
       }
     >
-      {isCoreDataPending ? (
+      {isCoreDataPending && !currentProxy ? (
         <Box sx={{ py: 4 }} />
       ) : currentProxy ? (
         <Box>
