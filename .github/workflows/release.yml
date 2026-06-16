@@ -100,7 +100,7 @@ jobs:
           ## 下载地址
 
           ### macOS (Apple Silicon)
-          - [Apple M芯片](${{ env.DOWNLOAD_URL }}/Clash.Verge_${{ env.VERSION }}_aarch64.dmg)
+          - [Apple M芯片](${{ env.DOWNLOAD_URL }}/Clash_Verge_${{ env.VERSION }}_aarch64.dmg)
 
           Created at ${{ env.BUILDTIME }}.
           EOF
@@ -186,7 +186,7 @@ jobs:
       - name: Attest macOS bundles
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: target/release/bundle/dmg/*.dmg
+          subject-path: target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
 
   release-update:
     if: ${{ !contains(github.ref_name, '-rc') }}
@@ -214,4 +214,3 @@ jobs:
         run: pnpm updater
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
