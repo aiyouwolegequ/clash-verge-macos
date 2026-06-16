@@ -43,6 +43,8 @@ const TQ_DEFAULTS = {
   retry: 2,
 } as const
 
+const LAST_USABLE_DATA_GRACE_MS = 5000
+
 function useStableFn<T extends (...args: any[]) => any>(fn: T): T {
   const ref = useRef(fn)
   ref.current = fn
@@ -54,14 +56,52 @@ type ProxiesData = Awaited<ReturnType<typeof calcuProxies>>
 function useLastUsableData<T>(
   data: T | undefined,
   isUsable: (value: T | undefined) => value is T,
+  graceMs = LAST_USABLE_DATA_GRACE_MS,
 ): T | undefined {
   const lastUsableRef = useRef<T | undefined>(undefined)
+  const unusableSinceRef = useRef<number | undefined>(undefined)
+  const [useFallback, setUseFallback] = React.useReducer(
+    (_: boolean, next: boolean) => next,
+    false,
+  )
+  const usable = isUsable(data)
 
-  if (isUsable(data)) {
-    lastUsableRef.current = data
+  React.useLayoutEffect(() => {
+    if (usable) {
+      lastUsableRef.current = data
+      unusableSinceRef.current = undefined
+      setUseFallback(false)
+      return
+    }
+
+    if (!lastUsableRef.current) {
+      unusableSinceRef.current = undefined
+      setUseFallback(false)
+      return
+    }
+
+    const unusableSince = unusableSinceRef.current ?? Date.now()
+    unusableSinceRef.current = unusableSince
+    const remainingMs = graceMs - (Date.now() - unusableSince)
+    if (remainingMs <= 0) {
+      setUseFallback(false)
+      return
+    }
+
+    setUseFallback(true)
+    const timer = window.setTimeout(() => setUseFallback(false), remainingMs)
+    return () => window.clearTimeout(timer)
+  }, [data, graceMs, isUsable, usable])
+
+  if (usable) {
+    return data
   }
 
-  return isUsable(data) ? data : lastUsableRef.current
+  if (useFallback && lastUsableRef.current) {
+    return lastUsableRef.current
+  }
+
+  return data
 }
 
 const hasUsableProxiesData = (
@@ -162,7 +202,8 @@ export const AppDataProvider = ({
 
   useEffect(() => {
     let lastProfileId: string | null = null
-    let lastUpdateTime = 0
+    let lastProfileUpdateTime = 0
+    let lastProxyRefreshTime = 0
     const refreshThrottle = 800
     const cleanupFns: Array<() => void> = []
 
@@ -171,12 +212,12 @@ export const AppDataProvider = ({
       const now = Date.now()
       if (
         lastProfileId === newProfileId &&
-        now - lastUpdateTime < refreshThrottle
+        now - lastProfileUpdateTime < refreshThrottle
       ) {
         return
       }
       lastProfileId = newProfileId
-      lastUpdateTime = now
+      lastProfileUpdateTime = now
       void queryClient.invalidateQueries({ queryKey: ['getProfiles'] })
       refreshRules().catch(() => {})
       refreshRuleProviders().catch(() => {})
@@ -184,8 +225,8 @@ export const AppDataProvider = ({
 
     const handleRefreshProxy = () => {
       const now = Date.now()
-      if (now - lastUpdateTime <= refreshThrottle) return
-      lastUpdateTime = now
+      if (now - lastProxyRefreshTime <= refreshThrottle) return
+      lastProxyRefreshTime = now
       refreshProxy().catch(() => {})
     }
 

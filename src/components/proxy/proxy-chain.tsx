@@ -400,7 +400,9 @@ export const ProxyChain = ({
       localStorage.setItem('proxy-chain-exit-node', lastNode.name)
 
       // 刷新代理信息以更新连接状态
-      refreshProxy()
+      await refreshProxy().catch((error) => {
+        console.error('[ProxyChain] 刷新代理数据失败:', error)
+      })
       debugLog('Successfully connected to proxy chain')
     } catch (error) {
       console.error('Failed to connect to proxy chain:', error)
