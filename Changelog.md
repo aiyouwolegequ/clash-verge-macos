@@ -1,3 +1,30 @@
+## v2.7.19
+
+> [!IMPORTANT]
+> 本版本修复代理页、首页当前节点和 Clash 信息在延迟测试、节点切换或核心短暂刷新期间偶发空白的问题，并更新 Mihomo 内核与 GeoData 资源。
+
+### 🐞 修复问题
+
+- **代理状态刷新稳定性**：核心数据短暂不可用时保留最后一次有效代理和 Clash 配置，避免首页当前节点、Clash 信息和代理列表被短暂空响应清空；若空数据持续超过 5 秒，则恢复显示真实空态，避免掩盖配置问题。
+- **延迟测试刷新顺序修复**：批量延迟测试不再在 `delayManager` 和 Mihomo `delayGroup` 竞速时提前刷新，改为等待本地和核心延迟状态都 settle 后再刷新，减少延迟排序和节点选择状态抖动。
+- **刷新事件节流修复**：拆分 `profile-changed` 与 `verge://refresh-proxy-config` 的节流状态，避免配置切换时代理刷新事件被 profile 事件吞掉。
+- **链式代理状态刷新修复**：链式代理连接成功后等待代理数据刷新完成并捕获刷新失败，避免连接状态偶发不同步。
+- **空白卡片兜底**：Clash 信息卡片在配置短暂不可用时继续显示字段占位，当前节点卡片在已有节点数据时不再因 pending 状态渲染空白。
+
+### 🚀 更新
+
+- **Mihomo 内核更新**：Stable 更新至 `v1.19.27`，Alpha 更新至 `alpha-2c6ff72`。
+- **GeoData 更新**：刷新 `Country.mmdb`、`geoip.dat` 和 `geosite.dat` 资源。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib` 验证。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check` 验证。
+- 完成 `pnpm prebuild --force` 与 `pnpm prebuild`，资源更新成功。
+- 完成 `pnpm build`，生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.7.19_aarch64.dmg`，SHA256：`3033f7de0885c3a18475f17f5b083eab217a80ceb05ee8963fdd8bd6497cf090`。
+
+---
+
 ## v2.7.18
 
 > [!IMPORTANT]
