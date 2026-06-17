@@ -163,6 +163,12 @@ const META_VERSION_URL =
 const META_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download`
 let META_VERSION
 
+const USE_LATEST_MIHOMO =
+  process.env.MIHOMO_USE_LATEST === '1' ||
+  process.env.MIHOMO_USE_LATEST === 'true'
+const PINNED_META_ALPHA_VERSION = process.env.MIHOMO_ALPHA_VERSION
+const PINNED_META_VERSION = process.env.MIHOMO_VERSION || 'v1.19.25'
+
 const META_ALPHA_MAP = {
   'darwin-arm64': 'mihomo-darwin-arm64-go122',
 }
@@ -175,8 +181,21 @@ const META_MAP = {
 // Fetch latest versions
 // =======================
 async function getLatestAlphaVersion() {
+  const usePinnedAlpha = Boolean(PINNED_META_ALPHA_VERSION)
+  const cacheKey =
+    usePinnedAlpha && !USE_LATEST_MIHOMO
+      ? 'META_ALPHA_VERSION_PINNED'
+      : 'META_ALPHA_VERSION_LATEST'
+
+  if (usePinnedAlpha && !USE_LATEST_MIHOMO) {
+    META_ALPHA_VERSION = PINNED_META_ALPHA_VERSION
+    log_info(`Using pinned alpha version: ${META_ALPHA_VERSION}`)
+    await setCachedVersion(cacheKey, META_ALPHA_VERSION)
+    return
+  }
+
   if (!FORCE) {
-    const cached = await getCachedVersion('META_ALPHA_VERSION')
+    const cached = await getCachedVersion(cacheKey)
     if (cached) {
       META_ALPHA_VERSION = cached
       return
@@ -201,7 +220,7 @@ async function getLatestAlphaVersion() {
       )
     META_ALPHA_VERSION = (await response.text()).trim()
     log_info(`Latest alpha version: ${META_ALPHA_VERSION}`)
-    await setCachedVersion('META_ALPHA_VERSION', META_ALPHA_VERSION)
+    await setCachedVersion(cacheKey, META_ALPHA_VERSION)
   } catch (err) {
     log_error('Error fetching latest alpha version:', err.message)
     throw err
@@ -209,8 +228,19 @@ async function getLatestAlphaVersion() {
 }
 
 async function getLatestReleaseVersion() {
+  const cacheKey = USE_LATEST_MIHOMO
+    ? 'META_VERSION_LATEST'
+    : 'META_VERSION_PINNED'
+
+  if (!USE_LATEST_MIHOMO) {
+    META_VERSION = PINNED_META_VERSION
+    log_info(`Using pinned release version: ${META_VERSION}`)
+    await setCachedVersion(cacheKey, META_VERSION)
+    return
+  }
+
   if (!FORCE) {
-    const cached = await getCachedVersion('META_VERSION')
+    const cached = await getCachedVersion(cacheKey)
     if (cached) {
       META_VERSION = cached
       return
@@ -233,7 +263,7 @@ async function getLatestReleaseVersion() {
       throw new Error(`Failed to fetch ${META_VERSION_URL}: ${response.status}`)
     META_VERSION = (await response.text()).trim()
     log_info(`Latest release version: ${META_VERSION}`)
-    await setCachedVersion('META_VERSION', META_VERSION)
+    await setCachedVersion(cacheKey, META_VERSION)
   } catch (err) {
     log_error('Error fetching latest release version:', err.message)
     throw err

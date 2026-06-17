@@ -68,7 +68,9 @@ pub struct BaseConfig {
     pub tcp_concurrent: bool,
     pub find_process_mode: FindProcessMode,
     pub sniffing: bool,
-    pub global_client_fingerprint: String,
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub global_client_fingerprint: Option<String>,
     pub global_ua: String,
     pub etag_support: bool,
     pub keep_alive_interval: isize,
@@ -485,24 +487,33 @@ pub struct Proxy {
     pub history: Vec<DelayHistory>,
     pub extra: HashMap<String, Extra>,
     pub name: String,
+    #[serde(default)]
     pub udp: bool,
+    #[serde(default)]
     pub uot: bool,
     #[serde(rename = "type")]
     pub proxy_type: ProxyType,
+    #[serde(default)]
     pub xudp: bool,
+    #[serde(default)]
     pub tfo: bool,
+    #[serde(default)]
     pub mptcp: bool,
+    #[serde(default)]
     pub smux: bool,
+    #[serde(default)]
     pub interface: String,
 
     #[serde(rename(serialize = "dialerProxy", deserialize = "dialer-proxy"))]
+    #[serde(default)]
     pub dialer_proxy: String,
 
     #[serde(rename(serialize = "routingMark", deserialize = "routing-mark"))]
+    #[serde(default)]
     pub routing_mark: i8,
 }
 
-#[derive(Debug, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[derive(Debug, Serialize, TS, PartialEq, Eq)]
 #[ts(export)]
 pub enum ProxyType {
     Direct,
@@ -533,6 +544,47 @@ pub enum ProxyType {
     Fallback,
     URLTest,
     LoadBalance,
+    Unknown,
+}
+
+impl<'de> Deserialize<'de> for ProxyType {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "Direct" => Self::Direct,
+            "Reject" => Self::Reject,
+            "RejectDrop" => Self::RejectDrop,
+            "Compatible" => Self::Compatible,
+            "Pass" => Self::Pass,
+            "Dns" => Self::Dns,
+            "Shadowsocks" => Self::Shadowsocks,
+            "ShadowsocksR" => Self::ShadowsocksR,
+            "Snell" => Self::Snell,
+            "Socks5" => Self::Socks5,
+            "Http" => Self::Http,
+            "Vmess" => Self::Vmess,
+            "Vless" => Self::Vless,
+            "Trojan" => Self::Trojan,
+            "Hysteria" => Self::Hysteria,
+            "Hysteria2" => Self::Hysteria2,
+            "WireGuard" => Self::WireGuard,
+            "Tuic" => Self::Tuic,
+            "Ssh" => Self::Ssh,
+            "Mieru" => Self::Mieru,
+            "Masque" => Self::Masque,
+            "AnyTLS" => Self::AnyTLS,
+            "Relay" => Self::Relay,
+            "Sudoku" => Self::Sudoku,
+            "Selector" => Self::Selector,
+            "Fallback" => Self::Fallback,
+            "URLTest" => Self::URLTest,
+            "LoadBalance" => Self::LoadBalance,
+            _ => Self::Unknown,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, TS, PartialEq, Eq)]
@@ -578,13 +630,30 @@ pub enum ProviderType {
     Rule,
 }
 
-#[derive(Debug, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[derive(Debug, Serialize, TS, PartialEq, Eq)]
 #[ts(export)]
 pub enum VehicleType {
     File,
     HTTP,
     Compatible,
     Inline,
+    Unknown,
+}
+
+impl<'de> Deserialize<'de> for VehicleType {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "File" => Self::File,
+            "HTTP" => Self::HTTP,
+            "Compatible" => Self::Compatible,
+            "Inline" => Self::Inline,
+            _ => Self::Unknown,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, TS, PartialEq, Eq)]
@@ -915,3 +984,101 @@ impl WebSocketWriter {
 
 #[derive(Default)]
 pub struct ConnectionManager(pub RwLock<HashMap<ConnectionId, WebSocketWriter>>);
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{BaseConfig, Proxies, ProxyType};
+
+    #[test]
+    fn base_config_accepts_removed_global_client_fingerprint() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let value = json!({
+            "port": 7890,
+            "socks-port": 7891,
+            "redir-port": 7892,
+            "tproxy-port": 7893,
+            "mixed-port": 7897,
+            "tun": {
+                "enable": false,
+                "device": "utun",
+                "stack": "System",
+                "dns-hijack": [],
+                "auto-route": false,
+                "auto-detect-interface": false,
+                "file-descriptor": 0
+            },
+            "tuic-server": {
+                "enable": false,
+                "listen": "",
+                "certificate": "",
+                "private-key": "",
+                "ech-key": ""
+            },
+            "ss-config": "",
+            "vmess-config": "",
+            "authentication": null,
+            "skip-auth-prefixes": null,
+            "lan-allowed-ips": null,
+            "lan-disallowed-ips": null,
+            "allow-lan": false,
+            "bind-address": "*",
+            "inbound-tfo": false,
+            "inbound-mptcp": false,
+            "mode": "rule",
+            "unified-delay": true,
+            "log-level": "info",
+            "ipv6": false,
+            "interface-name": "",
+            "routing-mark": 0,
+            "geox-url": {
+                "geo-ip": "",
+                "mmdb": "",
+                "asn": "",
+                "geo-site": ""
+            },
+            "geo-auto-update": false,
+            "geo-update-interval": 0,
+            "geodata-mode": false,
+            "geodata-loader": "standard",
+            "geosite-matcher": "succinct",
+            "tcp-concurrent": false,
+            "find-process-mode": "off",
+            "sniffing": false,
+            "global-ua": "",
+            "etag-support": true,
+            "keep-alive-interval": 0,
+            "keep-alive-idle": 0,
+            "disable-keep-alive": false
+        });
+
+        let config: BaseConfig = serde_json::from_value(value)?;
+        assert_eq!(config.global_client_fingerprint, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn proxies_accept_unknown_type_and_missing_runtime_flags() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let value = json!({
+            "proxies": {
+                "new-proxy": {
+                    "alive": true,
+                    "history": [],
+                    "extra": {},
+                    "name": "new-proxy",
+                    "type": "FutureProxy"
+                }
+            }
+        });
+
+        let proxies: Proxies = serde_json::from_value(value)?;
+        let proxy = proxies.proxies.get("new-proxy").ok_or("missing parsed proxy")?;
+        assert_eq!(proxy.proxy_type, ProxyType::Unknown);
+        assert!(!proxy.udp);
+        assert_eq!(proxy.interface, "");
+        assert_eq!(proxy.routing_mark, 0);
+
+        Ok(())
+    }
+}

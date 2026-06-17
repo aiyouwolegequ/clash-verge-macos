@@ -1,3 +1,28 @@
+## v2.8.0
+
+> [!IMPORTANT]
+> 本版本修复最新 Stable Mihomo 内核兼容性问题，避免因 v1.19.27 配置字段变化导致代理模式、节点信息和代理组加载失败；同时将发布构建收敛为只产出 DMG。
+
+### 🐞 修复问题
+
+- **Mihomo v1.19.27 配置兼容**：兼容上游移除 `global-client-fingerprint` 后的 `/configs` 响应，避免基础配置读取失败导致代理模式不可用。
+- **节点与代理组加载修复**：代理节点运行时字段缺失时使用默认值，并对未知 `ProxyType` / `VehicleType` 增加兜底，避免新内核返回新类型或省略字段时整批节点、代理组解析失败。
+- **格式检查修复**：让 Biome 遵循 Git ignore 规则，避免 `pnpm format:check` 扫描 `crates/tauri-plugin-mihomo/permissions/schemas/schema.json` 等既有生成文件。
+
+### 🚀 优化改进
+
+- **内核版本回退与可控升级**：Stable Mihomo 默认固定为 2.7.15 已验证可用的 `v1.19.25`，同时保留 `MIHOMO_VERSION`、`MIHOMO_USE_LATEST=1` 和 `MIHOMO_ALPHA_VERSION` 供后续验证或临时切换。
+- **发布产物收敛**：本地 `pnpm build`、Release Build 和 Autobuild workflow 均改为 `-b dmg`，只构建 macOS DMG 产物。
+
+### ✅ 验证
+
+- 完成 `pnpm prebuild --force`，Stable Mihomo 使用 `v1.19.25`，Alpha 使用当前可下载预览版。
+- 完成 `cargo fmt --check`、`cargo check`、`cargo check -p tauri-plugin-mihomo`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings` 验证。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check` 验证。
+- 完成 `pnpm build`，生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.0_aarch64.dmg`，SHA256：`待补充`。
+
+---
+
 ## v2.7.19
 
 > [!IMPORTANT]

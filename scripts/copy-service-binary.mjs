@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs'
-import { mkdir, unlink } from 'node:fs/promises'
+import { access, copyFile, mkdir, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
@@ -42,17 +42,26 @@ async function main() {
 
     await tarExtract({ file: tarPath, cwd: extractDir })
 
-    // Copy service binaries to the app bundle
-    for (const name of [
-      'clash-verge-service',
-      'clash-verge-service-install',
-      'clash-verge-service-uninstall',
-    ]) {
-      const src = resolve(extractDir, name)
-      const dest = resolve(bundleDir, name)
-      const { copyFile } = await import('node:fs/promises')
-      await copyFile(src, dest)
-      console.log(`Copied ${name} -> ${dest}`)
+    let bundleExists = true
+    try {
+      await access(bundleDir)
+    } catch {
+      bundleExists = false
+      console.log('App bundle not found, skipping service IPC bundle copy.')
+    }
+
+    if (bundleExists) {
+      // Copy service binaries to the app bundle
+      for (const name of [
+        'clash-verge-service',
+        'clash-verge-service-install',
+        'clash-verge-service-uninstall',
+      ]) {
+        const src = resolve(extractDir, name)
+        const dest = resolve(bundleDir, name)
+        await copyFile(src, dest)
+        console.log(`Copied ${name} -> ${dest}`)
+      }
     }
 
     // Also copy to target dir for next build
@@ -64,7 +73,6 @@ async function main() {
     ]) {
       const src = resolve(extractDir, name)
       const dest = resolve(binaryDir, name)
-      const { copyFile } = await import('node:fs/promises')
       await copyFile(src, dest)
     }
 
@@ -77,7 +85,6 @@ async function main() {
     ]) {
       const src = resolve(extractDir, name)
       const dest = resolve(resourcesDir, name)
-      const { copyFile } = await import('node:fs/promises')
       await copyFile(src, dest)
       console.log(`Copied ${name} -> ${dest}`)
     }

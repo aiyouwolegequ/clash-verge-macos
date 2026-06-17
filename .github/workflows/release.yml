@@ -180,7 +180,7 @@ jobs:
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-rc') }}
           tauriScript: pnpm
-          args: --target aarch64-apple-darwin
+          args: --target aarch64-apple-darwin -b dmg
           includeUpdaterJson: true
 
       - name: Attest macOS bundles

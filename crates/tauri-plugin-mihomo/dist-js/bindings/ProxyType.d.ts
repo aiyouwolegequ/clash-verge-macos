@@ -27,3 +27,4 @@ export type ProxyType =
   | 'Fallback'
   | 'URLTest'
   | 'LoadBalance'
+  | 'Unknown'
