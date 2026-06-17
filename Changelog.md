@@ -12,14 +12,15 @@
 ### 🚀 优化改进
 
 - **内核版本回退与可控升级**：Stable Mihomo 默认固定为 2.7.15 已验证可用的 `v1.19.25`，同时保留 `MIHOMO_VERSION`、`MIHOMO_USE_LATEST=1` 和 `MIHOMO_ALPHA_VERSION` 供后续验证或临时切换。
-- **发布产物收敛**：本地 `pnpm build`、Release Build 和 Autobuild workflow 均改为 `-b dmg`，只构建 macOS DMG 产物。
+- **发布产物收敛**：本地 `pnpm build`、Release Build 和 Autobuild workflow 均改为 `-b dmg`，只构建 macOS DMG 产物；Release workflow 不再生成 updater JSON，Tauri 配置关闭 updater artifacts。
+- **构建脚本可靠性**：本地 `pnpm build` 改为仅在 Tauri 构建成功后重命名 DMG，避免构建失败被后续脚本吞掉。
 
 ### ✅ 验证
 
-- 完成 `pnpm prebuild --force`，Stable Mihomo 使用 `v1.19.25`，Alpha 使用当前可下载预览版。
+- 完成 `pnpm prebuild --force`，Stable Mihomo 使用 `v1.19.25`，Alpha 使用 `alpha-8e2aba4`。
 - 完成 `cargo fmt --check`、`cargo check`、`cargo check -p tauri-plugin-mihomo`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings` 验证。
 - 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check` 验证。
-- 完成 `pnpm build`，生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.0_aarch64.dmg`，SHA256：`待补充`。
+- 完成 `pnpm build`，生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.0_aarch64.dmg`（约 59MB），SHA256：`5c5336eda32243a5a37cc733be647f91a29f7fe9a889c6c07e3d80cbface3414`。
 
 ---
 

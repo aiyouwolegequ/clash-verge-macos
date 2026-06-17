@@ -181,36 +181,9 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') }}
           tauriScript: pnpm
           args: --target aarch64-apple-darwin -b dmg
-          includeUpdaterJson: true
+          includeUpdaterJson: false
 
       - name: Attest macOS bundles
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-
-  release-update:
-    if: ${{ !contains(github.ref_name, '-rc') }}
-    name: Release Update
-    runs-on: ubuntu-latest
-    needs: [update_tag]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24.15.0'
-
-      - uses: pnpm/action-setup@v6
-        name: Install pnpm
-        with:
-          run_install: false
-
-      - name: Pnpm install
-        run: pnpm i
-
-      - name: Release updater file
-        run: pnpm updater
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
