@@ -3,25 +3,14 @@ use crate::{
     core::{CoreManager, handle, tray},
     feat::clean_async,
     process::AsyncHandler,
-    utils::{self, network::NetworkManager},
+    utils::{
+        self,
+        network::{NetworkManager, ProxyType},
+    },
 };
-use bytes::BytesMut;
 use clash_verge_logging::{Type, logging};
-use once_cell::sync::Lazy;
 use serde_yaml_ng::{Mapping, Value};
 use smartstring::alias::String;
-use std::sync::Arc;
-
-#[allow(clippy::expect_used)]
-static TLS_CONFIG: Lazy<Arc<rustls::ClientConfig>> = Lazy::new(|| {
-    let root_store = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-        .with_safe_default_protocol_versions()
-        .expect("Failed to set TLS versions")
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-    Arc::new(config)
-});
 
 /// Restart the Clash core
 pub async fn restart_clash_core() {
@@ -112,44 +101,23 @@ pub async fn change_clash_mode(mode: String) {
 }
 
 /// Test delay to a URL through proxy.
-/// HTTPS: measures TLS handshake time. HTTP: measures HEAD round-trip time.
+/// Measures the HEAD response time through the local Mihomo mixed proxy.
 pub async fn test_delay(url: String) -> anyhow::Result<u32> {
-    use std::sync::Arc;
     use std::time::Duration;
-    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-    use tokio::net::TcpStream;
     use tokio::time::Instant;
 
     let parsed = tauri::Url::parse(&url)?;
-    let destination = NetworkManager::resolve_public_destination_for_request(url.as_str(), false)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("URL host could not be resolved"))?;
-    let connect_addr = *destination
-        .addrs
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("URL host could not be resolved"))?;
-    let is_https = parsed.scheme() == "https";
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| anyhow::anyhow!("Invalid URL: no host"))?
-        .to_string();
+    NetworkManager::resolve_public_destination_for_request(url.as_str(), true).await?;
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let start = Instant::now();
-        let mut buf = BytesMut::with_capacity(1024);
+        let client = NetworkManager::new()
+            .create_request(ProxyType::Localhost, Some(10), None, false)
+            .await?;
+        let response = client.head(parsed.clone()).send().await?;
 
-        if is_https {
-            let stream = TcpStream::connect(connect_addr).await?;
-            let connector = tokio_rustls::TlsConnector::from(Arc::clone(&TLS_CONFIG));
-            let server_name = rustls::pki_types::ServerName::try_from(host.as_str())
-                .map_err(|_| anyhow::anyhow!("Invalid DNS name: {host}"))?
-                .to_owned();
-            connector.connect(server_name, stream).await?;
-        } else {
-            let mut stream = TcpStream::connect(connect_addr).await?;
-            let req = format!("HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-            stream.write_all(req.as_bytes()).await?;
-            let _ = stream.read(&mut buf).await?;
+        if response.status() == reqwest::StatusCode::METHOD_NOT_ALLOWED {
+            client.get(parsed).send().await?;
         }
 
         // frontend treats 0 as timeout

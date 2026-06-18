@@ -20,7 +20,7 @@ class DelayManager {
   private listenerMap = new Map<string, (update: DelayUpdate) => void>()
 
   // 每个分组的监听
-  private groupListenerMap = new Map<string, () => void>()
+  private groupListenerMap = new Map<string, Set<() => void>>()
 
   private pendingItemUpdates = new Map<string, DelayUpdate[]>()
   private pendingGroupUpdates = new Set<string>()
@@ -79,16 +79,18 @@ class DelayManager {
       this.pendingGroupUpdates = new Set()
 
       groups.forEach((group) => {
-        const listener = this.groupListenerMap.get(group)
-        if (!listener) return
-        try {
-          listener()
-        } catch (error) {
-          console.error(
-            `[DelayManager] 通知分组延迟监听器失败: ${group}`,
-            error,
-          )
-        }
+        const listeners = this.groupListenerMap.get(group)
+        if (!listeners) return
+        listeners.forEach((listener) => {
+          try {
+            listener()
+          } catch (error) {
+            console.error(
+              `[DelayManager] 通知分组延迟监听器失败: ${group}`,
+              error,
+            )
+          }
+        })
       })
     })
   }
@@ -127,11 +129,26 @@ class DelayManager {
   }
 
   setGroupListener(group: string, listener: () => void) {
-    this.groupListenerMap.set(group, listener)
+    const listeners = this.groupListenerMap.get(group)
+    if (listeners) {
+      listeners.add(listener)
+    } else {
+      this.groupListenerMap.set(group, new Set([listener]))
+    }
   }
 
-  removeGroupListener(group: string) {
-    this.groupListenerMap.delete(group)
+  removeGroupListener(group: string, listener?: () => void) {
+    if (!listener) {
+      this.groupListenerMap.delete(group)
+      return
+    }
+
+    const listeners = this.groupListenerMap.get(group)
+    if (!listeners) return
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      this.groupListenerMap.delete(group)
+    }
   }
 
   setDelay(
@@ -159,6 +176,7 @@ class DelayManager {
       this.pendingItemUpdates.set(key, [update])
     }
     this.scheduleItemFlush()
+    this.queueGroupNotification(group)
 
     return update
   }
@@ -264,7 +282,6 @@ class DelayManager {
 
     let index = 0
     const startTime = Date.now()
-    const listener = this.groupListenerMap.get(group)
 
     const help = async (): Promise<void> => {
       const currName = names[index++]
@@ -283,9 +300,6 @@ class DelayManager {
         }
 
         await this.checkDelay(currName, group, timeout)
-        if (listener) {
-          this.queueGroupNotification(group)
-        }
       } catch (error) {
         console.error(
           `[DelayManager] 批量测试单个代理出错，代理: ${currName}`,

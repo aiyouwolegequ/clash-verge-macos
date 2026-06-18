@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs'
-import { mkdir, unlink } from 'node:fs/promises'
+import { mkdir, rm, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
@@ -31,13 +31,16 @@ async function main() {
     console.log('Downloading clash-verge-service-ipc binaries...')
     const response = await fetch(IPC_RELEASE_URL)
     if (!response.ok) {
-      console.error(`Failed to download service IPC: ${response.status}`)
-      return
+      throw new Error(`download failed with HTTP ${response.status}`)
+    }
+    if (!response.body) {
+      throw new Error('download response body is empty')
     }
 
     const fileStream = createWriteStream(tarPath)
     await pipeline(response.body, fileStream)
 
+    await rm(extractDir, { recursive: true, force: true })
     await mkdir(extractDir, { recursive: true })
 
     await tarExtract({ file: tarPath, cwd: extractDir })
@@ -85,9 +88,13 @@ async function main() {
     console.log('Service IPC binaries installed successfully')
   } catch (err) {
     console.error(`Failed to download service IPC: ${err.message}`)
+    process.exitCode = 1
   } finally {
     try {
       await unlink(tarPath)
+    } catch {}
+    try {
+      await rm(extractDir, { recursive: true, force: true })
     } catch {}
   }
 }

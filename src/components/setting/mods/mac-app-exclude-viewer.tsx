@@ -35,6 +35,7 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
         executable_names: string[]
       }[]
     >([])
+    const [selectedApps, setSelectedApps] = useState<string[]>([])
     const [refreshing, setRefreshing] = useState(false)
     const { verge, patchVerge, mutateVerge } = useVerge()
     const excludeApps = verge?.mac_exclude_apps || []
@@ -42,23 +43,16 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
     useImperativeHandle(ref, () => ({
       open: async () => {
         setOpen(true)
+        setSelectedApps(excludeApps)
         const appList = await getMacosApps()
         setApps(appList)
-
-        if (excludeApps.length === 0 && appList.length > 0) {
-          const allPaths = appList.map((a) => a.path)
-          patchVerge({ mac_exclude_apps: allPaths })
-          mutateVerge({ ...verge, mac_exclude_apps: allPaths } as any, false)
-        }
       },
     }))
 
     const onToggle = (path: string) => {
-      const newExcludes = excludeApps.includes(path)
-        ? excludeApps.filter((a) => a !== path)
-        : [...excludeApps, path]
-      patchVerge({ mac_exclude_apps: newExcludes })
-      mutateVerge({ ...verge, mac_exclude_apps: newExcludes } as any, false)
+      setSelectedApps((prev) =>
+        prev.includes(path) ? prev.filter((a) => a !== path) : [...prev, path],
+      )
     }
 
     const filteredApps = apps.filter(
@@ -69,12 +63,12 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
 
     const isAllSelected =
       filteredApps.length > 0 &&
-      filteredApps.every((a) => excludeApps.includes(a.path))
+      filteredApps.every((a) => selectedApps.includes(a.path))
     const isIndeterminate =
-      !isAllSelected && filteredApps.some((a) => excludeApps.includes(a.path))
+      !isAllSelected && filteredApps.some((a) => selectedApps.includes(a.path))
 
     const toggleAll = () => {
-      let newExcludes = [...excludeApps]
+      let newExcludes = [...selectedApps]
       if (isAllSelected) {
         newExcludes = newExcludes.filter(
           (path) => !filteredApps.some((a) => a.path === path),
@@ -85,14 +79,14 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
           .map((a) => a.path)
         newExcludes = [...newExcludes, ...toAdd]
       }
-      patchVerge({ mac_exclude_apps: newExcludes })
-      mutateVerge({ ...verge, mac_exclude_apps: newExcludes } as any, false)
+      setSelectedApps(newExcludes)
     }
 
     const onRefresh = async () => {
       setRefreshing(true)
       try {
-        await refreshMacExcludeApps()
+        const appList = await getMacosApps()
+        setApps(appList)
       } finally {
         setRefreshing(false)
       }
@@ -104,9 +98,18 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
         onClose={() => setOpen(false)}
         title="macOS 直连应用"
         okBtn="确定"
-        onOk={() => {
+        onOk={async () => {
+          mutateVerge(
+            (prev) =>
+              ({
+                ...prev,
+                mac_exclude_apps: selectedApps,
+              }) as IVergeConfig,
+            false,
+          )
+          await patchVerge({ mac_exclude_apps: selectedApps })
           setOpen(false)
-          if (excludeApps.length > 0) refreshMacExcludeApps()
+          await refreshMacExcludeApps()
         }}
         disableCancel
         contentSx={{
@@ -185,7 +188,7 @@ export const MacAppExcludeViewer = forwardRef<MacAppExcludeViewerRef>(
                   <ListItemIcon>
                     <Checkbox
                       edge="start"
-                      checked={excludeApps.includes(app.path)}
+                      checked={selectedApps.includes(app.path)}
                       tabIndex={-1}
                       disableRipple
                       slotProps={{ input: { 'aria-labelledby': labelId } }}

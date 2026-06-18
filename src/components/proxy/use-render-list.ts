@@ -175,7 +175,7 @@ export const useRenderList = (
     return () => {
       clearTimeout(handle)
       // 清理组监听器
-      delayManager.removeGroupListener('chain-mode')
+      delayManager.removeGroupListener('chain-mode', groupListener)
     }
   }, [isChainMode, runtimeConfig, verge?.default_latency_timeout, refreshProxy])
 

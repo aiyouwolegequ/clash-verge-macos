@@ -206,6 +206,19 @@ export const AppDataProvider = ({
     let lastProxyRefreshTime = 0
     const refreshThrottle = 800
     const cleanupFns: Array<() => void> = []
+    let disposed = false
+
+    const addCleanup = (fn: () => void) => {
+      if (disposed) {
+        try {
+          fn()
+        } catch (error) {
+          console.error('[DataProvider] Cleanup error:', error)
+        }
+        return
+      }
+      cleanupFns.push(fn)
+    }
 
     const handleProfileChanged = (event: { payload: string }) => {
       const newProfileId = event.payload
@@ -236,7 +249,7 @@ export const AppDataProvider = ({
           'profile-changed',
           handleProfileChanged,
         )
-        cleanupFns.push(unlistenProfile)
+        addCleanup(unlistenProfile)
       } catch (error) {
         console.error('[AppDataProvider] 监听 Profile 事件失败:', error)
       }
@@ -246,7 +259,7 @@ export const AppDataProvider = ({
           'verge://refresh-proxy-config',
           handleRefreshProxy,
         )
-        cleanupFns.push(unlistenProxy)
+        addCleanup(unlistenProxy)
       } catch (error) {
         console.warn('[AppDataProvider] 设置 Tauri 事件监听器失败:', error)
       }
@@ -255,6 +268,7 @@ export const AppDataProvider = ({
     void initializeListeners()
 
     return () => {
+      disposed = true
       cleanupFns.forEach((fn) => {
         try {
           fn()

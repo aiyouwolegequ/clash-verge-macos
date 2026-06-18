@@ -59,6 +59,12 @@ export const MiscViewer = forwardRef<DialogRef>((props, ref) => {
 
   const onSave = useLockFn(async () => {
     try {
+      const defaultLatencyTimeout =
+        Number.isFinite(values.defaultLatencyTimeout) &&
+        values.defaultLatencyTimeout > 0
+          ? values.defaultLatencyTimeout
+          : 10000
+
       await patchVerge({
         app_log_level: values.appLogLevel,
         app_log_max_size: values.appLogMaxSize,
@@ -71,7 +77,7 @@ export const MiscViewer = forwardRef<DialogRef>((props, ref) => {
         auto_delay_detection_interval_minutes:
           values.autoDelayDetectionIntervalMinutes,
         default_latency_test: values.defaultLatencyTest,
-        default_latency_timeout: values.defaultLatencyTimeout,
+        default_latency_timeout: defaultLatencyTimeout,
         auto_log_clean: values.autoLogClean as any,
       })
       setOpen(false)
@@ -402,12 +408,16 @@ export const MiscViewer = forwardRef<DialogRef>((props, ref) => {
             autoCapitalize="off"
             spellCheck="false"
             sx={{ width: 250 }}
-            value={values.defaultLatencyTimeout}
+            value={
+              Number.isFinite(values.defaultLatencyTimeout)
+                ? values.defaultLatencyTimeout
+                : ''
+            }
             placeholder="10000"
             onChange={(e) =>
               setValues((v) => ({
                 ...v,
-                defaultLatencyTimeout: parseInt(e.target.value),
+                defaultLatencyTimeout: parseInt(e.target.value, 10),
               }))
             }
             slotProps={{

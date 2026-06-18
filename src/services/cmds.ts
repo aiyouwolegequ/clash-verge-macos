@@ -394,7 +394,11 @@ export async function cmdGetProxyDelay(
 }
 
 export async function cmdTestDelay(url: string) {
-  return invoke<number>('test_delay', { url })
+  try {
+    return await invoke<number>('test_delay', { url })
+  } catch {
+    return 1e6
+  }
 }
 
 export async function invoke_uwp_tool() {

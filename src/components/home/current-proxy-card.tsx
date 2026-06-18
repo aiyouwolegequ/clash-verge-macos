@@ -31,7 +31,7 @@ import { useLockFn } from 'ahooks'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
-import { delayGroup, healthcheckProxyProvider } from 'tauri-plugin-mihomo-api'
+import { healthcheckProxyProvider } from 'tauri-plugin-mihomo-api'
 
 import { EnhancedCard } from '@/components/home/enhanced-card'
 import { useProfiles } from '@/hooks/use-profiles'
@@ -65,8 +65,9 @@ type ProxySortType = 0 | 1 | 2
 
 function convertDelayColor(
   delayValue: number,
+  timeout = 10000,
 ): 'success' | 'warning' | 'error' | 'primary' | 'default' {
-  const colorStr = delayManager.formatDelayColor(delayValue)
+  const colorStr = delayManager.formatDelayColor(delayValue, timeout)
   if (!colorStr) return 'default'
 
   const mainColor = colorStr.split('.')[0]
@@ -85,7 +86,10 @@ function convertDelayColor(
   }
 }
 
-function getSignalIcon(delay: number): {
+function getSignalIcon(
+  delay: number,
+  timeout = 10000,
+): {
   icon: React.ReactElement
   text: string
   color: string
@@ -96,7 +100,7 @@ function getSignalIcon(delay: number): {
     return { icon: <SignalNone />, text: '未测试', color: 'text.secondary' }
   if (delay > 1e5)
     return { icon: <SignalError />, text: '错误', color: 'error.main' }
-  if (delay === 0 || delay >= 10000)
+  if (delay === 0 || delay >= timeout)
     return { icon: <SignalError />, text: '超时', color: 'error.main' }
   if (delay >= 500)
     return { icon: <SignalWeak />, text: '延迟较高', color: 'error.main' }
@@ -120,6 +124,9 @@ export const CurrentProxyCard = () => {
   const { current: currentProfile } = useProfiles()
   const autoDelayEnabled = verge?.enable_auto_delay_detection ?? true
   const defaultLatencyTimeout = verge?.default_latency_timeout
+  const defaultLatencyUrl =
+    verge?.default_latency_test?.trim() ||
+    'http://cp.cloudflare.com/generate_204'
   const autoDelayIntervalMs = useMemo(() => {
     const rawInterval = verge?.auto_delay_detection_interval_minutes
     const intervalMinutes =
@@ -190,7 +197,10 @@ export const CurrentProxyCard = () => {
   // Sorting type state
   const [sortType, setSortType] = useState<ProxySortType>(() => {
     const savedSortType = localStorage.getItem(STORAGE_KEY_SORT_TYPE)
-    return savedSortType ? (Number(savedSortType) as ProxySortType) : 0
+    const parsedSortType = Number(savedSortType)
+    return parsedSortType === 0 || parsedSortType === 1 || parsedSortType === 2
+      ? parsedSortType
+      : 1
   })
   const [delaySortRefresh, setDelaySortRefresh] = useState(0)
 
@@ -258,6 +268,11 @@ export const CurrentProxyCard = () => {
   useEffect(() => {
     latestTimeoutRef.current = verge?.default_latency_timeout || 10000
   }, [verge?.default_latency_timeout])
+
+  useEffect(() => {
+    if (!state.selection.group || isDirectMode) return
+    delayManager.setUrl(state.selection.group, defaultLatencyUrl)
+  }, [defaultLatencyUrl, isDirectMode, state.selection.group])
 
   useEffect(() => {
     if (!state.selection.proxy) {
@@ -545,11 +560,15 @@ export const CurrentProxyCard = () => {
     currentProxy && state.selection.group
       ? delayManager.getDelayFix(currentProxy, state.selection.group)
       : -1
+  const currentDelayTimeout =
+    typeof defaultLatencyTimeout === 'number' && defaultLatencyTimeout > 0
+      ? defaultLatencyTimeout
+      : 10000
 
   // 信号图标（增加非空校验）
   const signalInfo =
     currentProxy && state.selection.group
-      ? getSignalIcon(currentDelay)
+      ? getSignalIcon(currentDelay, currentDelayTimeout)
       : { icon: <SignalNone />, text: '未初始化', color: 'text.secondary' }
 
   const checkCurrentProxyDelay = useCallback(async () => {
@@ -655,8 +674,8 @@ export const CurrentProxyCard = () => {
         <Typography noWrap>{selected}</Typography>
         <Chip
           size="small"
-          label={delayManager.formatDelay(delayValue)}
-          color={convertDelayColor(delayValue)}
+          label={delayManager.formatDelay(delayValue, currentDelayTimeout)}
+          color={convertDelayColor(delayValue, currentDelayTimeout)}
         />
       </Box>
     )
@@ -669,88 +688,9 @@ export const CurrentProxyCard = () => {
     localStorage.setItem(STORAGE_KEY_SORT_TYPE, newSortType.toString())
   }, [sortType])
 
-  // 延迟测试
+  // 延迟测试当前节点
   const handleCheckDelay = useLockFn(async () => {
-    const groupName = state.selection.group
-    if (!groupName || isDirectMode) return
-
-    debugLog(`[CurrentProxyCard] 开始测试所有延迟，组: ${groupName}`)
-
-    const timeout = verge?.default_latency_timeout || 10000
-
-    // 获取当前组的所有代理
-    const proxyNames: string[] = []
-    const providers: Set<string> = new Set()
-
-    if (isGlobalMode && proxies?.global) {
-      // 全局模式
-      const allProxies = proxies.global.all
-        .filter((p: any) => {
-          const name = typeof p === 'string' ? p : p.name
-          return name !== 'DIRECT' && name !== 'REJECT'
-        })
-        .map((p: any) => (typeof p === 'string' ? p : p.name))
-
-      allProxies.forEach((name: string) => {
-        const proxy = state.proxyData.records[name]
-        if (proxy?.provider) {
-          providers.add(proxy.provider)
-        } else {
-          proxyNames.push(name)
-        }
-      })
-    } else {
-      // 规则模式
-      const group = state.proxyData.groups.find((g) => g.name === groupName)
-      if (group) {
-        group.all.forEach((name: string) => {
-          const proxy = state.proxyData.records[name]
-          if (proxy?.provider) {
-            providers.add(proxy.provider)
-          } else {
-            proxyNames.push(name)
-          }
-        })
-      }
-    }
-
-    debugLog(
-      `[CurrentProxyCard] 找到代理数量: ${proxyNames.length}, 提供者数量: ${providers.size}`,
-    )
-
-    // 测试提供者的节点
-    if (providers.size > 0) {
-      debugLog(`[CurrentProxyCard] 开始测试提供者节点`)
-      await Promise.allSettled(
-        [...providers].map((p) => healthcheckProxyProvider(p)),
-      )
-    }
-
-    // 测试非提供者的节点
-    if (proxyNames.length > 0) {
-      const url = delayManager.getUrl(groupName)
-      debugLog(`[CurrentProxyCard] 测试URL: ${url}, 超时: ${timeout}ms`)
-
-      try {
-        await Promise.allSettled([
-          delayManager.checkListDelay(proxyNames, groupName, timeout),
-          delayGroup(groupName, url, timeout),
-        ])
-        debugLog(`[CurrentProxyCard] 延迟测试完成，组: ${groupName}`)
-      } catch (error) {
-        console.error(
-          `[CurrentProxyCard] 延迟测试出错，组: ${groupName}`,
-          error,
-        )
-      }
-    }
-
-    await refreshProxy().catch((error) => {
-      console.error('[CurrentProxyCard] 刷新代理数据失败:', error)
-    })
-    if (sortType === 1) {
-      setDelaySortRefresh((prev) => prev + 1)
-    }
+    await checkCurrentProxyDelay()
   })
 
   // 计算要显示的代理选项（增加非空校验）
@@ -878,7 +818,7 @@ export const CurrentProxyCard = () => {
         <Tooltip
           title={
             currentProxy
-              ? `${signalInfo.text}: ${delayManager.formatDelay(currentDelay)}`
+              ? `${signalInfo.text}: ${delayManager.formatDelay(currentDelay, currentDelayTimeout)}`
               : '无代理节点'
           }
         >
@@ -996,8 +936,11 @@ export const CurrentProxyCard = () => {
             {currentProxy && !isDirectMode && (
               <Chip
                 size="small"
-                label={delayManager.formatDelay(currentDelay)}
-                color={convertDelayColor(currentDelay)}
+                label={delayManager.formatDelay(
+                  currentDelay,
+                  currentDelayTimeout,
+                )}
+                color={convertDelayColor(currentDelay, currentDelayTimeout)}
               />
             )}
           </Box>
@@ -1076,8 +1019,14 @@ export const CurrentProxyCard = () => {
                         </Typography>
                         <Chip
                           size="small"
-                          label={delayManager.formatDelay(delayValue)}
-                          color={convertDelayColor(delayValue)}
+                          label={delayManager.formatDelay(
+                            delayValue,
+                            currentDelayTimeout,
+                          )}
+                          color={convertDelayColor(
+                            delayValue,
+                            currentDelayTimeout,
+                          )}
                           sx={{
                             minWidth: '60px',
                             height: '22px',

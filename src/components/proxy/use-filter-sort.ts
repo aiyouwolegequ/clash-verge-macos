@@ -21,7 +21,10 @@ export default function useFilterSort(
   searchState?: ProxySearchState,
 ) {
   const { verge } = useVerge()
-  const [_, bumpRefresh] = useReducer((count: number) => count + 1, 0)
+  const [refreshToken, bumpRefresh] = useReducer(
+    (count: number) => count + 1,
+    0,
+  )
   const lastInputRef = useRef<{ text: string; sort: ProxySortType } | null>(
     null,
   )
@@ -30,21 +33,25 @@ export default function useFilterSort(
   useEffect(() => {
     let last = 0
 
-    delayManager.setGroupListener(groupName, () => {
+    const listener = () => {
       // 简单节流
       const now = Date.now()
       if (now - last > 666) {
         last = now
         bumpRefresh()
       }
-    })
+    }
+
+    delayManager.setGroupListener(groupName, listener)
 
     return () => {
-      delayManager.removeGroupListener(groupName)
+      delayManager.removeGroupListener(groupName, listener)
     }
   }, [groupName])
 
   const compute = useMemo(() => {
+    void refreshToken
+
     const fp = filterProxies(proxies, groupName, filterText, searchState)
     const sp = sortProxies(
       fp,
@@ -58,6 +65,7 @@ export default function useFilterSort(
     groupName,
     filterText,
     sortType,
+    refreshToken,
     searchState,
     verge?.default_latency_timeout,
   ])

@@ -92,6 +92,8 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
         return
       }
 
+      const mtu =
+        Number.isFinite(values.mtu) && values.mtu > 0 ? values.mtu : 1500
       const tun: IConfigData['tun'] = {
         stack: values.stack,
         device: values.device === '' ? 'utun1024' : values.device,
@@ -100,7 +102,7 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
         'auto-detect-interface': values.autoDetectInterface,
         'dns-hijack': values.dnsHijack[0] === '' ? [] : values.dnsHijack,
         'strict-route': values.strictRoute,
-        mtu: values.mtu ?? 1500,
+        mtu,
       }
       await patchClash({ tun })
       await mutateClash(
@@ -267,12 +269,12 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
             autoCapitalize="off"
             spellCheck="false"
             sx={{ width: 250 }}
-            value={values.mtu}
+            value={Number.isFinite(values.mtu) ? values.mtu : ''}
             placeholder="1500"
             onChange={(e) =>
               setValues((v) => ({
                 ...v,
-                mtu: parseInt(e.target.value),
+                mtu: parseInt(e.target.value, 10),
               }))
             }
           />
