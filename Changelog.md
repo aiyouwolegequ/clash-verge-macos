@@ -1,3 +1,27 @@
+## v2.8.2
+
+> [!IMPORTANT]
+> 本版本修复首页「当前节点」手动延迟测试只更新当前节点的问题，使下拉节点列表能够显示当前代理组的批量测速结果。
+
+### 🐞 修复问题
+
+- **首页当前节点测速修复**：点击首页「当前节点」卡片的延迟测试按钮时，改为测试当前代理组内所有可选节点；provider 节点、普通节点和 Mihomo group delay 结果会同步写入前端延迟缓存，避免只有当前使用节点显示延迟、其他节点继续显示 `-`。
+- **延迟显示缓存修复**：首页当前节点卡片、下拉选中值、下拉列表和按延迟排序统一优先读取本次手动测速缓存，再回退到 Mihomo history，减少 provider 节点测速后 UI 不刷新的情况。
+
+### 🚀 更新
+
+- **Mihomo Alpha 更新**：`pnpm prebuild --force` 已刷新 Alpha 内核到 `alpha-be9164e`；Stable Mihomo 保持 pinned `v1.19.25`，Service 保持 `v2.3.0`。
+- **GeoData 更新**：刷新 `Country.mmdb`、`geoip.dat` 和 `geosite.dat` 资源。
+
+### ✅ 验证
+
+- 完成 `pnpm prebuild --force`。
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings` 验证。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check` 验证。
+- 完成 `pnpm prebuild` 与 `pnpm build`，生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.2_aarch64.dmg`（约 58MB），SHA256：`688c8aea5d9976969d3072d41cbd8d4d9cd7ba30eb878a30bb11647f7c5f06b3`。
+
+---
+
 ## v2.8.1
 
 > [!IMPORTANT]
