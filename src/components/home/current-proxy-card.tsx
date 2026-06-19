@@ -31,7 +31,7 @@ import { useLockFn } from 'ahooks'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
-import { healthcheckProxyProvider } from 'tauri-plugin-mihomo-api'
+import { delayGroup, healthcheckProxyProvider } from 'tauri-plugin-mihomo-api'
 
 import { EnhancedCard } from '@/components/home/enhanced-card'
 import { useProfiles } from '@/hooks/use-profiles'
@@ -264,6 +264,23 @@ export const CurrentProxyCard = () => {
     verge?.default_latency_timeout || 10000,
   )
   const latestProxyRecordRef = useRef<any | null>(null)
+
+  const getProxyDelayValue = useCallback(
+    (proxy: IProxyItem | null | undefined, groupName: string) => {
+      if (!proxy || !groupName) return -1
+
+      const cachedUpdate = delayManager.getDelayUpdate(proxy.name, groupName)
+      if (
+        cachedUpdate &&
+        (cachedUpdate.delay >= 0 || cachedUpdate.delay === -2)
+      ) {
+        return cachedUpdate.delay
+      }
+
+      return delayManager.getDelayFix(proxy, groupName)
+    },
+    [],
+  )
 
   useEffect(() => {
     latestTimeoutRef.current = verge?.default_latency_timeout || 10000
@@ -558,7 +575,7 @@ export const CurrentProxyCard = () => {
   // 获取当前节点的延迟（增加非空校验）
   const currentDelay =
     currentProxy && state.selection.group
-      ? delayManager.getDelayFix(currentProxy, state.selection.group)
+      ? getProxyDelayValue(currentProxy, state.selection.group)
       : -1
   const currentDelayTimeout =
     typeof defaultLatencyTimeout === 'number' && defaultLatencyTimeout > 0
@@ -624,6 +641,89 @@ export const CurrentProxyCard = () => {
     setDelaySortRefresh,
   ])
 
+  const checkCurrentGroupDelay = useCallback(async () => {
+    if (autoCheckInProgressRef.current) return
+    if (isDirectMode) return
+
+    const groupName = state.selection.group
+    if (!groupName) return
+
+    const rawNames: Array<string | { name?: string }> = isGlobalMode
+      ? (proxies?.global?.all ?? [])
+      : (state.proxyData.groups.find((group) => group.name === groupName)
+          ?.all ?? [])
+
+    const names = Array.from(
+      new Set(
+        rawNames
+          .map((item: string | { name?: string }) =>
+            typeof item === 'string'
+              ? normalizePolicyName(item)
+              : normalizePolicyName(item?.name),
+          )
+          .filter((name): name is string => name.length > 0),
+      ),
+    )
+
+    if (names.length === 0) return
+
+    autoCheckInProgressRef.current = true
+
+    const timeout = latestTimeoutRef.current || 10000
+    const url = delayManager.getUrl(groupName)
+    const records = state.proxyData.records
+    const providers = new Set<string>(
+      names
+        .map((name) => records[name]?.provider)
+        .filter((provider): provider is string => Boolean(provider)),
+    )
+    const unmanagedNames = names.filter((name) => !records[name]?.provider)
+
+    try {
+      debugLog(
+        `[CurrentProxyCard] 手动检测当前组延迟，组: ${groupName}, 数量: ${names.length}`,
+      )
+      names.forEach((name) => delayManager.setDelay(name, groupName, -2))
+
+      await Promise.allSettled([
+        providers.size
+          ? Promise.allSettled(
+              [...providers].map((provider) =>
+                healthcheckProxyProvider(provider),
+              ),
+            )
+          : Promise.resolve(),
+        delayManager.checkListDelay(unmanagedNames, groupName, timeout),
+        delayGroup(groupName, url, timeout).then((result) => {
+          Object.entries(result || {}).forEach(([name, delay]) => {
+            delayManager.setDelay(name, groupName, delay)
+          })
+        }),
+      ])
+    } catch (error) {
+      console.error(
+        `[CurrentProxyCard] 手动检测当前组延迟失败，组: ${groupName}`,
+        error,
+      )
+    } finally {
+      autoCheckInProgressRef.current = false
+      await refreshProxy().catch((error) => {
+        console.error('[CurrentProxyCard] 刷新代理数据失败:', error)
+      })
+      setDelaySortRefresh((prev) => prev + 1)
+    }
+  }, [
+    isDirectMode,
+    isGlobalMode,
+    normalizePolicyName,
+    proxies?.global?.all,
+    refreshProxy,
+    state.proxyData.groups,
+    state.proxyData.records,
+    state.selection.group,
+    setDelaySortRefresh,
+  ])
+
   useEffect(() => {
     if (isDirectMode) return
     if (!autoDelayEnabled) return
@@ -664,7 +764,7 @@ export const CurrentProxyCard = () => {
   const renderProxyValue = (selected: string) => {
     if (!selected || !state.proxyData.records[selected]) return selected
 
-    const delayValue = delayManager.getDelayFix(
+    const delayValue = getProxyDelayValue(
       state.proxyData.records[selected],
       state.selection.group,
     )
@@ -688,9 +788,9 @@ export const CurrentProxyCard = () => {
     localStorage.setItem(STORAGE_KEY_SORT_TYPE, newSortType.toString())
   }, [sortType])
 
-  // 延迟测试当前节点
+  // 延迟测试当前组
   const handleCheckDelay = useLockFn(async () => {
-    await checkCurrentProxyDelay()
+    await checkCurrentGroupDelay()
   })
 
   // 计算要显示的代理选项（增加非空校验）
@@ -727,12 +827,12 @@ export const CurrentProxyCard = () => {
 
           const [ar, av] = recordA
             ? categorizeDelay(
-                delayManager.getDelayFix(recordA, state.selection.group),
+                getProxyDelayValue(recordA, state.selection.group),
               )
             : [6, Number.MAX_SAFE_INTEGER]
           const [br, bv] = recordB
             ? categorizeDelay(
-                delayManager.getDelayFix(recordB, state.selection.group),
+                getProxyDelayValue(recordB, state.selection.group),
               )
             : [6, Number.MAX_SAFE_INTEGER]
 
@@ -783,6 +883,7 @@ export const CurrentProxyCard = () => {
     sortType,
     delaySortRefresh,
     defaultLatencyTimeout,
+    getProxyDelayValue,
   ])
 
   // 获取排序图标
@@ -997,7 +1098,7 @@ export const CurrentProxyCard = () => {
                     const delayValue =
                       state.proxyData.records[proxy.name] &&
                       state.selection.group
-                        ? delayManager.getDelayFix(
+                        ? getProxyDelayValue(
                             state.proxyData.records[proxy.name],
                             state.selection.group,
                           )
