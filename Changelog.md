@@ -1,3 +1,25 @@
+## v2.8.3
+
+> [!IMPORTANT]
+> 本版本修复 macOS 直连应用选择器无法发现 `/Applications` 子目录中应用包的问题。
+
+### 🐞 修复问题
+
+- **macOS 直连应用发现**：递归扫描 `/Applications`、`/System/Applications`、`/System/Applications/Utilities` 和 `~/Applications` 中的 `.app`；识别到应用包后不再进入其内部，避免将应用的 Helper `.app` 作为独立应用展示。
+- **直连规则覆盖**：已添加应用继续生成 `PROCESS-PATH-WILDCARD` 和 `PROCESS-NAME` 的 `DIRECT` 规则，并在用户原有规则前生效。
+
+### 🚀 更新
+
+- **发布资源刷新**：`pnpm prebuild --force` 已刷新 Alpha Mihomo 至 `alpha-dd7bc4c`，Stable Mihomo 保持 pinned `v1.19.25`，clash-verge-service 更新至 `v2.6.1`，并刷新 GeoData。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm prebuild` 与 `pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.3_aarch64.dmg`（62,249,537 bytes），SHA256：`74d87a3624aa928f6299cc305b1366237078110713ca9e97db95781ec693c2b0`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.8.3_aarch64.dmg`。
+
+---
+
 ## v2.8.2
 
 > [!IMPORTANT]

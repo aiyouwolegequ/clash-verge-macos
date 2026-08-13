@@ -85,8 +85,56 @@ pub fn collect_bundle_executables(app_bundle: &Path) -> Vec<SmartString> {
     executables
 }
 
-pub fn get_installed_macos_apps() -> Vec<MacAppInfo> {
+fn is_app_bundle(path: &Path) -> bool {
+    path.is_dir()
+        && path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
+}
+
+fn collect_installed_macos_apps(dirs: impl IntoIterator<Item = PathBuf>) -> Vec<MacAppInfo> {
+    let mut bundles = Vec::new();
+
+    for root in dirs {
+        let mut pending_dirs = vec![root];
+        while let Some(dir) = pending_dirs.pop() {
+            let Ok(entries) = std::fs::read_dir(dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if is_app_bundle(&path) {
+                    bundles.push(path);
+                    continue;
+                }
+
+                // Do not follow directory symlinks: they can form cycles outside
+                // /Applications. Symlinked .app bundles above are still included.
+                if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    pending_dirs.push(path);
+                }
+            }
+        }
+    }
+
     let mut apps = Vec::new();
+    for path in bundles {
+        let (display_name, bundle_id, _) = read_bundle_info(&path);
+        let Some(name) = display_name.or_else(|| path_stem(&path)) else {
+            continue;
+        };
+        apps.push(MacAppInfo {
+            name,
+            path: SmartString::from(path.to_string_lossy().as_ref()),
+            bundle_id,
+            executable_names: collect_bundle_executables(&path),
+        });
+    }
+
+    apps.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.path.cmp(&b.path)));
+    apps.dedup_by(|a, b| a.path == b.path);
+    apps
+}
+
+pub fn get_installed_macos_apps() -> Vec<MacAppInfo> {
     let mut dirs = vec![
         PathBuf::from("/Applications"),
         PathBuf::from("/System/Applications"),
@@ -96,30 +144,7 @@ pub fn get_installed_macos_apps() -> Vec<MacAppInfo> {
         dirs.push(PathBuf::from(home).join("Applications"));
     }
 
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else { continue };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("app") {
-                continue;
-            }
-
-            let (display_name, bundle_id, _) = read_bundle_info(&path);
-            let Some(name) = display_name.or_else(|| path_stem(&path)) else {
-                continue;
-            };
-            apps.push(MacAppInfo {
-                name,
-                path: SmartString::from(path.to_string_lossy().as_ref()),
-                bundle_id,
-                executable_names: collect_bundle_executables(&path),
-            });
-        }
-    }
-
-    apps.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.path.cmp(&b.path)));
-    apps.dedup_by(|a, b| a.path == b.path);
-    apps
+    collect_installed_macos_apps(dirs)
 }
 
 pub struct MacExcludeAppsManager {
@@ -245,5 +270,29 @@ impl MacExcludeAppsManager {
     #[allow(dead_code)]
     pub fn stop(&self) {
         self.enabled.store(false, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collects_apps_from_application_subdirectories_without_helpers() -> std::io::Result<()> {
+        let root = std::env::temp_dir().join(format!("clash-verge-mac-apps-{}", std::process::id()));
+        let wechat = root.join("微信.app");
+        let nested = root.join("Utilities").join("Nested.app");
+        let helper = wechat.join("Contents/Frameworks/Helper.app");
+
+        std::fs::create_dir_all(&helper)?;
+        std::fs::create_dir_all(&nested)?;
+
+        let apps = collect_installed_macos_apps(vec![root.clone()]);
+        let paths = apps.iter().map(|app| app.path.as_str()).collect::<Vec<_>>();
+        assert!(paths.contains(&wechat.to_string_lossy().as_ref()));
+        assert!(paths.contains(&nested.to_string_lossy().as_ref()));
+        assert!(!paths.contains(&helper.to_string_lossy().as_ref()));
+
+        std::fs::remove_dir_all(root)
     }
 }
