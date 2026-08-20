@@ -1,3 +1,28 @@
+## v2.9.3
+
+> [!IMPORTANT]
+> 本版本完善 macOS Service 下的 TUN 运行时链路，并让批量订阅更新在下载结束后仅重载一次核心，避免下载中的代理请求被提前中断。
+
+### 🐞 修复问题
+
+- **Service API 连接一致性**：Service 启动核心后，界面立即切换到该 Service 的私有 Mihomo Socket；避免核心已运行但 GUI 仍连接旧临时 Socket。
+- **macOS 配置重载**：Service 模式跳过会被运行时安全路径拒绝的 Mihomo API 重载，改为配置校验后受控重启；失败时保留原有配置恢复逻辑。
+- **批量订阅更新**：新增批量更新命令，并发下载全部订阅后仅在当前订阅成功更新时统一重载一次核心，避免首个完成的订阅中断同批 Clash 代理下载。
+- **版本化日志**：应用与 Sidecar 日志按 `logs/v{version}` 分目录保存，日志入口保留在版本根目录，便于跨版本排查。
+
+### 🚀 更新
+
+- **发布资源**：Stable Mihomo 为 `v1.19.30`，Alpha Mihomo 为 `alpha-fe22fdd`，clash-verge-service 为 `v2.6.1`。`pnpm prebuild --force` 尝试刷新最新 Alpha `alpha-dd26c52` 时，GitHub Release 资源下载连续出现 TLS 连接重置，未以未校验文件替换现有资源；正式构建复用已验证的 `alpha-fe22fdd`，Stable、Service 与 GeoData 均完成存在性校验。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check` 与 `MIHOMO_ALPHA_VERSION=alpha-fe22fdd pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.9.3_aarch64.dmg`，并通过 `hdiutil verify` 与镜像内应用的 `codesign --verify --deep --strict` 校验（69,052,140 bytes），SHA256：`1bbef2e5bbb6bdf155b26697f25d32cc17bb0822045aed1a5e8d096a26eeab95`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.9.3_aarch64.dmg`。
+- **已知环境项**：强制资源同步因 GitHub Release TLS 连接重置未完成；不影响使用已验证资源生成的 DMG，但下次具备稳定网络时应重新运行 `pnpm prebuild --force` 刷新 Alpha Mihomo。
+
+---
+
 ## v2.9.1
 
 > [!IMPORTANT]
