@@ -12,10 +12,11 @@ use clash_verge_service_ipc::{
 use compact_str::CompactString;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex as ParkingMutex;
-use std::{borrow::Cow, env::current_exe, path::Path, time::Duration};
+use std::{borrow::Cow, env::current_exe, future::Future, path::Path, time::Duration};
 use tokio::sync::Mutex;
 
 static ACTIVE_SERVICE_SESSION: Lazy<ParkingMutex<Option<ActiveServiceSession>>> = Lazy::new(|| ParkingMutex::new(None));
+const SERVICE_IPC_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone)]
 struct ActiveServiceSession {
@@ -493,6 +494,13 @@ pub fn is_service_ipc_path_exists() -> bool {
     Path::new(clash_verge_service_ipc::IPC_PATH).exists()
 }
 
+async fn bound_service_probe(probe: impl Future<Output = ServiceStatus>, timeout: Duration) -> ServiceStatus {
+    match tokio::time::timeout(timeout, probe).await {
+        Ok(status) => status,
+        Err(_) => ServiceStatus::Unavailable(format!("macOS 服务连接超时（{} 秒）", timeout.as_secs())),
+    }
+}
+
 impl ServiceManager {
     pub const fn default() -> Self {
         Self(ServiceStatus::Checking)
@@ -508,7 +516,7 @@ impl ServiceManager {
 
     /// 初始化服务管理器：尝试连接并更新状态
     pub async fn init(&mut self) -> Result<()> {
-        self.0 = self.check_service_comprehensive().await;
+        self.0 = bound_service_probe(self.check_service_comprehensive(), SERVICE_IPC_PROBE_TIMEOUT).await;
         if !matches!(self.0, ServiceStatus::Ready) {
             bail!("service is not ready: {:?}", self.0);
         }
@@ -522,7 +530,7 @@ impl ServiceManager {
 
     /// 刷新服务状态只记录观察结果；安装和修复必须由前端显式请求。
     pub async fn refresh(&mut self) -> Result<()> {
-        let status = self.check_service_comprehensive().await;
+        let status = bound_service_probe(self.check_service_comprehensive(), SERVICE_IPC_PROBE_TIMEOUT).await;
         logging!(info, Type::Service, "服务状态检查结果: {:?}", status);
         self.0 = status;
         Ok(())
@@ -605,7 +613,8 @@ pub static SERVICE_MANAGER: Lazy<Mutex<ServiceManager>> = Lazy::new(|| Mutex::ne
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_osascript_string, shell_quote};
+    use super::{ServiceStatus, bound_service_probe, escape_osascript_string, shell_quote};
+    use std::time::Duration;
 
     #[test]
     fn shell_quote_wraps_argument() {
@@ -623,5 +632,12 @@ mod tests {
             escape_osascript_string(r#"sudo '/tmp/A "quoted" \ path'"#),
             r#"sudo '/tmp/A \"quoted\" \\ path'"#
         );
+    }
+
+    #[tokio::test]
+    async fn timed_out_service_probe_is_unavailable() {
+        let status = bound_service_probe(std::future::pending(), Duration::ZERO).await;
+
+        assert!(matches!(status, ServiceStatus::Unavailable(reason) if reason.contains("超时")));
     }
 }

@@ -19,6 +19,10 @@ const fn should_wait_for_service_startup(
     needs_tun && service_ipc_path_exists && matches!(status, ServiceStatus::Checking)
 }
 
+const fn should_probe_existing_service(status: &ServiceStatus) -> bool {
+    matches!(status, ServiceStatus::Checking)
+}
+
 impl CoreManager {
     pub async fn start_core(&self) -> Result<()> {
         self.prepare_startup().await?;
@@ -98,7 +102,7 @@ impl CoreManager {
 
         // 服务不是 Ready 状态，尝试初始化
         let service_ipc_path_exists = service::is_service_ipc_path_exists();
-        if service_ipc_path_exists {
+        if service_ipc_path_exists && should_probe_existing_service(&current) {
             logging!(info, Type::Core, "发现服务 IPC，尝试初始化服务管理器");
             if manager.init().await.is_ok() {
                 let _ = manager.refresh().await;
@@ -171,5 +175,13 @@ mod tests {
             &ServiceStatus::NotInstalled
         ));
         assert!(!should_wait_for_service_startup(false, true, &ServiceStatus::Checking));
+    }
+
+    #[test]
+    fn only_probes_an_unresolved_service() {
+        assert!(should_probe_existing_service(&ServiceStatus::Checking));
+        assert!(!should_probe_existing_service(&ServiceStatus::Unavailable(
+            "connection refused".into()
+        )));
     }
 }
