@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri_plugin_mihomo::{IpcConnectionPool, IpcPoolConfigBuilder, Mihomo, models::Protocol};
 
 #[allow(dead_code)]
-pub const TEST_URL: &str = "http://www.gstatic.com/generate_204";
+pub const TEST_URL: &str = "https://www.gstatic.com/generate_204";
 #[allow(dead_code)]
 pub const TIMEOUT: u32 = 3000;
 

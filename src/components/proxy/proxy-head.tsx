@@ -18,6 +18,10 @@ import { useTranslation } from 'react-i18next'
 import { BaseSearchBox } from '@/components/base'
 import { useVerge } from '@/hooks/use-verge'
 import delayManager from '@/services/delay'
+import {
+  DEFAULT_DELAY_TEST_URL,
+  normalizeDelayTestUrl,
+} from '@/services/delay-url'
 import { debugLog } from '@/utils/debug'
 
 import type { ProxySortType } from './use-filter-sort'
@@ -65,9 +69,9 @@ export const ProxyHead = ({
   }, [])
 
   const { verge } = useVerge()
-  const defaultLatencyUrl =
-    verge?.default_latency_test?.trim() ||
-    'http://cp.cloudflare.com/generate_204'
+  const defaultLatencyUrl = normalizeDelayTestUrl(
+    verge?.default_latency_test || DEFAULT_DELAY_TEST_URL,
+  )
 
   useEffect(() => {
     delayManager.setUrl(groupName, testUrl?.trim() || url || defaultLatencyUrl)

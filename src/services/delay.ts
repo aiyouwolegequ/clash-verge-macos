@@ -1,8 +1,13 @@
-import { delayProxyByName, ProxyDelay } from 'tauri-plugin-mihomo-api'
+import { delayProxyByName } from 'tauri-plugin-mihomo-api'
 
+import {
+  DEFAULT_DELAY_TEST_URL,
+  normalizeDelayTestUrl,
+} from '@/services/delay-url'
 import { debugLog } from '@/utils/debug'
 
-const hashKey = (name: string, group: string) => `${group ?? ''}::${name}`
+const hashKey = (name: string, group: string) =>
+  JSON.stringify([group ?? '', name])
 
 export interface DelayUpdate {
   delay: number
@@ -17,7 +22,10 @@ class DelayManager {
   private urlMap = new Map<string, string>()
 
   // 每个节点的监听
-  private listenerMap = new Map<string, (update: DelayUpdate) => void>()
+  private listenerMap = new Map<string, Set<(update: DelayUpdate) => void>>()
+  private requestGeneration = new Map<string, number>()
+  private coreFailureGeneration = 0
+  private lastCoreFailureLogAt = 0
 
   // 每个分组的监听
   private groupListenerMap = new Map<string, Set<() => void>>()
@@ -52,18 +60,20 @@ class DelayManager {
       this.pendingItemUpdates = new Map()
 
       updates.forEach((queue, key) => {
-        const listener = this.listenerMap.get(key)
-        if (!listener) return
+        const listeners = this.listenerMap.get(key)
+        if (!listeners) return
 
         queue.forEach((update) => {
-          try {
-            listener(update)
-          } catch (error) {
-            console.error(
-              `[DelayManager] 通知节点延迟监听器失败: ${key}`,
-              error,
-            )
-          }
+          listeners.forEach((listener) => {
+            try {
+              listener(update)
+            } catch (error) {
+              console.error(
+                `[DelayManager] 通知节点延迟监听器失败: ${key}`,
+                error,
+              )
+            }
+          })
         })
       })
     })
@@ -100,9 +110,33 @@ class DelayManager {
     this.scheduleGroupFlush()
   }
 
+  private isCoreUnavailableError(error: unknown) {
+    const message = String(error).toLowerCase()
+    return (
+      message.includes('connection refused') ||
+      message.includes('no such file or directory') ||
+      (message.includes('socket') && message.includes('not found'))
+    )
+  }
+
+  private logDelayError(
+    name: string,
+    error: unknown,
+    coreUnavailable: boolean,
+  ) {
+    const now = Date.now()
+    if (!coreUnavailable || now - this.lastCoreFailureLogAt > 1000) {
+      console.error(`[DelayManager] 延迟测试出错，代理: ${name}`, error)
+      if (coreUnavailable) this.lastCoreFailureLogAt = now
+      return
+    }
+    debugLog(`[DelayManager] 核心不可用，抑制重复错误日志，代理: ${name}`)
+  }
+
   setUrl(group: string, url: string) {
-    debugLog(`[DelayManager] 设置测试URL，组: ${group}, URL: ${url}`)
-    this.urlMap.set(group, url)
+    const normalizedUrl = normalizeDelayTestUrl(url)
+    debugLog(`[DelayManager] 设置测试URL，组: ${group}, URL: ${normalizedUrl}`)
+    this.urlMap.set(group, normalizedUrl)
   }
 
   getUrl(group: string) {
@@ -111,7 +145,7 @@ class DelayManager {
       `[DelayManager] 获取测试URL，组: ${group}, URL: ${url || '未设置'}`,
     )
     // 如果未设置URL，返回默认URL
-    return url || 'http://cp.cloudflare.com/generate_204'
+    return url || DEFAULT_DELAY_TEST_URL
   }
 
   setListener(
@@ -120,12 +154,30 @@ class DelayManager {
     listener: (update: DelayUpdate) => void,
   ) {
     const key = hashKey(name, group)
-    this.listenerMap.set(key, listener)
+    const listeners = this.listenerMap.get(key)
+    if (listeners) {
+      listeners.add(listener)
+    } else {
+      this.listenerMap.set(key, new Set([listener]))
+    }
   }
 
-  removeListener(name: string, group: string) {
+  removeListener(
+    name: string,
+    group: string,
+    listener?: (update: DelayUpdate) => void,
+  ) {
     const key = hashKey(name, group)
-    this.listenerMap.delete(key)
+    if (!listener) {
+      this.listenerMap.delete(key)
+      return
+    }
+    const listeners = this.listenerMap.get(key)
+    if (!listeners) return
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      this.listenerMap.delete(key)
+    }
   }
 
   setGroupListener(group: string, listener: () => void) {
@@ -225,6 +277,10 @@ class DelayManager {
       `[DelayManager] 开始测试延迟，代理: ${name}, 组: ${group}, 超时: ${timeout}ms`,
     )
 
+    const key = hashKey(name, group)
+    const generation = (this.requestGeneration.get(key) ?? 0) + 1
+    this.requestGeneration.set(key, generation)
+
     // 先将状态设置为测试中
     this.setDelay(name, group, -2)
 
@@ -234,16 +290,8 @@ class DelayManager {
       const url = this.getUrl(group)
       debugLog(`[DelayManager] 调用API测试延迟，代理: ${name}, URL: ${url}`)
 
-      // 设置超时处理, delay = 0 为超时
-      const timeoutPromise = new Promise<ProxyDelay>((resolve) => {
-        setTimeout(() => resolve({ delay: 0 }), timeout)
-      })
-
-      // 使用Promise.race来实现超时控制
-      const result = await Promise.race([
-        delayProxyByName(name, url, timeout),
-        timeoutPromise,
-      ])
+      // Mihomo 和 Rust 请求层负责超时，避免 Promise.race 留下仍在执行的 IPC 请求。
+      const result = await delayProxyByName(name, url, timeout)
 
       // 确保至少显示500ms的加载动画
       const elapsedTime = Date.now() - startTime
@@ -255,14 +303,39 @@ class DelayManager {
       const elapsed = elapsedTime
       debugLog(`[DelayManager] 延迟测试完成，代理: ${name}, 结果: ${delay}ms`)
 
+      if (this.requestGeneration.get(key) !== generation) {
+        return (
+          this.getDelayUpdate(name, group) ?? {
+            delay,
+            elapsed,
+            updatedAt: Date.now(),
+          }
+        )
+      }
       return this.setDelay(name, group, delay, { elapsed })
     } catch (error) {
       // 确保至少显示500ms的加载动画
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      console.error(`[DelayManager] 延迟测试出错，代理: ${name}`, error)
+      const elapsedBeforeDelay = Date.now() - startTime
+      if (elapsedBeforeDelay < 500) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 500 - elapsedBeforeDelay),
+        )
+      }
+      const coreUnavailable = this.isCoreUnavailableError(error)
+      if (coreUnavailable) this.coreFailureGeneration += 1
+      this.logDelayError(name, error, coreUnavailable)
       const delay = 1e6 // error
       const elapsed = Date.now() - startTime
 
+      if (this.requestGeneration.get(key) !== generation) {
+        return (
+          this.getDelayUpdate(name, group) ?? {
+            delay,
+            elapsed,
+            updatedAt: Date.now(),
+          }
+        )
+      }
       return this.setDelay(name, group, delay, { elapsed })
     }
   }
@@ -281,9 +354,12 @@ class DelayManager {
     names.forEach((name) => this.setDelay(name, group, -2))
 
     let index = 0
+    let abortedForCoreFailure = false
+    const initialCoreFailureGeneration = this.coreFailureGeneration
     const startTime = Date.now()
 
     const help = async (): Promise<void> => {
+      if (abortedForCoreFailure) return
       const currName = names[index++]
       if (!currName) return
 
@@ -300,6 +376,9 @@ class DelayManager {
         }
 
         await this.checkDelay(currName, group, timeout)
+        if (this.coreFailureGeneration !== initialCoreFailureGeneration) {
+          abortedForCoreFailure = true
+        }
       } catch (error) {
         console.error(
           `[DelayManager] 批量测试单个代理出错，代理: ${currName}`,
@@ -322,6 +401,13 @@ class DelayManager {
     }
 
     await Promise.all(promiseList)
+    if (abortedForCoreFailure) {
+      names.forEach((name) => {
+        if (this.getDelay(name, group) === -2) {
+          this.setDelay(name, group, 1e6)
+        }
+      })
+    }
     const totalTime = Date.now() - startTime
     debugLog(
       `[DelayManager] 批量测试延迟完成，组: ${group}, 总耗时: ${totalTime}ms`,

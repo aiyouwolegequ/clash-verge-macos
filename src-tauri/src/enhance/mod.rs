@@ -25,6 +25,44 @@ use std::path::Path;
 use tokio::fs;
 
 type ResultLog = Vec<(String, String)>;
+
+fn upgrade_known_delay_test_url(value: &mut Value) {
+    let Some(url) = value.as_str() else {
+        return;
+    };
+    let upgraded = match url {
+        "http://cp.cloudflare.com/generate_204" => Some("https://cp.cloudflare.com/generate_204"),
+        "http://www.gstatic.com/generate_204" => Some("https://www.gstatic.com/generate_204"),
+        _ => None,
+    };
+    if let Some(upgraded) = upgraded {
+        *value = Value::String(upgraded.to_owned());
+    }
+}
+
+fn upgrade_known_delay_test_urls(config: &mut Mapping) {
+    if let Some(groups) = config.get_mut("proxy-groups").and_then(Value::as_sequence_mut) {
+        for group in groups {
+            if let Some(url) = group.as_mapping_mut().and_then(|group| group.get_mut("url")) {
+                upgrade_known_delay_test_url(url);
+            }
+        }
+    }
+
+    if let Some(providers) = config.get_mut("proxy-providers").and_then(Value::as_mapping_mut) {
+        for provider in providers.values_mut() {
+            if let Some(url) = provider
+                .as_mapping_mut()
+                .and_then(|provider| provider.get_mut("health-check"))
+                .and_then(Value::as_mapping_mut)
+                .and_then(|health_check| health_check.get_mut("url"))
+            {
+                upgrade_known_delay_test_url(url);
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct ConfigValues {
     clash_config: Mapping,
@@ -702,6 +740,8 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 
     config = cleanup_proxy_groups(config);
 
+    upgrade_known_delay_test_urls(&mut config);
+
     config = deduplicate_rules(config);
 
     config = apply_mac_direct_app_rules(config).await;
@@ -722,7 +762,55 @@ pub async fn enhance() -> Result<(Mapping, HashSet<String>, HashMap<String, Resu
 #[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
-    use super::{cleanup_proxy_groups, deduplicate_rules};
+    use super::{cleanup_proxy_groups, deduplicate_rules, upgrade_known_delay_test_urls};
+
+    #[test]
+    fn upgrades_known_http_delay_urls_without_changing_custom_urls() {
+        let config_str = r"
+proxy-groups:
+  - name: cloudflare
+    type: url-test
+    url: http://cp.cloudflare.com/generate_204
+  - name: custom
+    type: url-test
+    url: http://latency.example.com/ping
+proxy-providers:
+  legacy:
+    type: http
+    url: https://example.com/provider.yaml
+    health-check:
+      enable: true
+      url: http://www.gstatic.com/generate_204
+";
+        let mut config: serde_yaml_ng::Mapping =
+            serde_yaml_ng::from_str(config_str).expect("Failed to parse test yaml");
+
+        upgrade_known_delay_test_urls(&mut config);
+
+        let groups = config
+            .get("proxy-groups")
+            .and_then(serde_yaml_ng::Value::as_sequence)
+            .expect("proxy-groups should be a sequence");
+        assert_eq!(
+            groups[0].get("url").and_then(serde_yaml_ng::Value::as_str),
+            Some("https://cp.cloudflare.com/generate_204")
+        );
+        assert_eq!(
+            groups[1].get("url").and_then(serde_yaml_ng::Value::as_str),
+            Some("http://latency.example.com/ping")
+        );
+
+        let provider_url = config
+            .get("proxy-providers")
+            .and_then(serde_yaml_ng::Value::as_mapping)
+            .and_then(|providers| providers.get("legacy"))
+            .and_then(serde_yaml_ng::Value::as_mapping)
+            .and_then(|provider| provider.get("health-check"))
+            .and_then(serde_yaml_ng::Value::as_mapping)
+            .and_then(|health_check| health_check.get("url"))
+            .and_then(serde_yaml_ng::Value::as_str);
+        assert_eq!(provider_url, Some("https://www.gstatic.com/generate_204"));
+    }
 
     #[test]
     fn remove_missing_proxies_from_groups() {

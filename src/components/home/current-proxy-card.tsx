@@ -45,6 +45,10 @@ import {
   useRulesData,
 } from '@/providers/app-data-context'
 import delayManager from '@/services/delay'
+import {
+  DEFAULT_DELAY_TEST_URL,
+  normalizeDelayTestUrl,
+} from '@/services/delay-url'
 import { debugLog } from '@/utils/debug'
 
 // 本地存储的键名
@@ -124,9 +128,9 @@ export const CurrentProxyCard = () => {
   const { current: currentProfile } = useProfiles()
   const autoDelayEnabled = verge?.enable_auto_delay_detection ?? true
   const defaultLatencyTimeout = verge?.default_latency_timeout
-  const defaultLatencyUrl =
-    verge?.default_latency_test?.trim() ||
-    'http://cp.cloudflare.com/generate_204'
+  const defaultLatencyUrl = normalizeDelayTestUrl(
+    verge?.default_latency_test || DEFAULT_DELAY_TEST_URL,
+  )
   const autoDelayIntervalMs = useMemo(() => {
     const rawInterval = verge?.auto_delay_detection_interval_minutes
     const intervalMinutes =
