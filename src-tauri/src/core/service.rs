@@ -17,6 +17,8 @@ use tokio::sync::Mutex;
 
 static ACTIVE_SERVICE_SESSION: Lazy<ParkingMutex<Option<ActiveServiceSession>>> = Lazy::new(|| ParkingMutex::new(None));
 const SERVICE_IPC_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+const SERVICE_IPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const SERVICE_IPC_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(35);
 
 #[derive(Clone)]
 struct ActiveServiceSession {
@@ -50,7 +52,7 @@ fn clear_active_service_session() {
 }
 
 async fn probe_runtime_staging_support() -> bool {
-    match clash_verge_service_ipc::get_version().await {
+    match run_service_ipc(clash_verge_service_ipc::get_version(), SERVICE_IPC_PROBE_TIMEOUT).await {
         Ok(response) if response.code == 0 => response
             .data
             .as_ref()
@@ -281,9 +283,12 @@ pub(super) async fn start_with_existing_service(config_file: &Path) -> Result<()
         macos_proxy: None,
     };
 
-    let response = clash_verge_service_ipc::start_clash(&credentials, &request)
-        .await
-        .context("无法连接到Clash Verge Service")?;
+    let response = run_service_ipc(
+        clash_verge_service_ipc::start_clash(&credentials, &request),
+        SERVICE_IPC_LIFECYCLE_TIMEOUT,
+    )
+    .await
+    .context("无法连接到Clash Verge Service")?;
 
     if response.code > 0 {
         let err_msg = response.message;
@@ -324,9 +329,12 @@ pub(super) async fn run_core_by_service(config_file: &Path) -> Result<()> {
 
 pub(super) async fn get_clash_logs_by_service() -> Result<Vec<CompactString>> {
     let credentials = current_owner_credentials()?;
-    let response = clash_verge_service_ipc::get_clash_logs(&credentials)
-        .await
-        .context("无法连接到Clash Verge Service")?;
+    let response = run_service_ipc(
+        clash_verge_service_ipc::get_clash_logs(&credentials),
+        SERVICE_IPC_REQUEST_TIMEOUT,
+    )
+    .await
+    .context("无法连接到Clash Verge Service")?;
 
     if response.code > 0 {
         let err_msg = response.message;
@@ -343,9 +351,12 @@ pub(super) async fn stop_core_by_service() -> Result<()> {
 
     let credentials = current_owner_credentials()?;
     let session = active_service_session()?;
-    let response = clash_verge_service_ipc::stop_clash(&credentials, &session)
-        .await
-        .context("无法连接到Clash Verge Service")?;
+    let response = run_service_ipc(
+        clash_verge_service_ipc::stop_clash(&credentials, &session),
+        SERVICE_IPC_LIFECYCLE_TIMEOUT,
+    )
+    .await
+    .context("无法连接到Clash Verge Service")?;
 
     if response.code > 0 {
         let err_msg = response.message;
@@ -361,9 +372,12 @@ pub(super) async fn stop_core_by_service() -> Result<()> {
 pub(crate) async fn update_writer_by_service(writer: &WriterConfig) -> Result<()> {
     let credentials = current_owner_credentials()?;
     let session = active_service_session()?;
-    let response = clash_verge_service_ipc::update_writer(&credentials, &session, writer)
-        .await
-        .context("无法连接到Clash Verge Service")?;
+    let response = run_service_ipc(
+        clash_verge_service_ipc::update_writer(&credentials, &session, writer),
+        SERVICE_IPC_REQUEST_TIMEOUT,
+    )
+    .await
+    .context("无法连接到Clash Verge Service")?;
     if response.code > 0 {
         bail!(response.message);
     }
@@ -379,9 +393,12 @@ pub(super) async fn stage_runtime_by_service(config_file: &Path) -> Result<Stage
     let core_path = current_exe()?.with_file_name(clash_core.as_str());
     let runtime = collect_runtime_bundle(config_file, &core_path).await?;
 
-    let response = clash_verge_service_ipc::stage_runtime(&credentials, &session, &runtime)
-        .await
-        .context("无法连接到Clash Verge Service")?;
+    let response = run_service_ipc(
+        clash_verge_service_ipc::stage_runtime(&credentials, &session, &runtime),
+        SERVICE_IPC_LIFECYCLE_TIMEOUT,
+    )
+    .await
+    .context("无法连接到Clash Verge Service")?;
     if response.code > 0 {
         return Ok(StageRequest::Refused {
             code: response.code,
@@ -397,7 +414,7 @@ pub(super) async fn stage_runtime_by_service(config_file: &Path) -> Result<Stage
 /// 检查服务是否正在运行（供前端 is_service_available 命令使用）
 pub async fn is_service_available() -> Result<()> {
     Path::metadata(clash_verge_service_ipc::IPC_PATH.as_ref())?;
-    let response = clash_verge_service_ipc::get_version().await?;
+    let response = run_service_ipc(clash_verge_service_ipc::get_version(), SERVICE_IPC_PROBE_TIMEOUT).await?;
     let protocol = response.data.context("service did not return protocol information")?;
     if response.code != 0
         || !protocol.supports_client(
@@ -494,11 +511,12 @@ pub fn is_service_ipc_path_exists() -> bool {
     Path::new(clash_verge_service_ipc::IPC_PATH).exists()
 }
 
-async fn bound_service_probe(probe: impl Future<Output = ServiceStatus>, timeout: Duration) -> ServiceStatus {
-    match tokio::time::timeout(timeout, probe).await {
-        Ok(status) => status,
-        Err(_) => ServiceStatus::Unavailable(format!("macOS 服务连接超时（{} 秒）", timeout.as_secs())),
-    }
+async fn run_service_ipc<T>(operation: impl Future<Output = Result<T>>, timeout: Duration) -> Result<T> {
+    // The IPC client retries its transport internally, so every direct service request must pass
+    // through this outer deadline to keep a stale socket from blocking a caller indefinitely.
+    tokio::time::timeout(timeout, operation)
+        .await
+        .map_err(|_| anyhow!("macOS 服务 IPC 超时（{} 秒）", timeout.as_secs()))?
 }
 
 impl ServiceManager {
@@ -516,7 +534,7 @@ impl ServiceManager {
 
     /// 初始化服务管理器：尝试连接并更新状态
     pub async fn init(&mut self) -> Result<()> {
-        self.0 = bound_service_probe(self.check_service_comprehensive(), SERVICE_IPC_PROBE_TIMEOUT).await;
+        self.0 = self.check_service_comprehensive().await;
         if !matches!(self.0, ServiceStatus::Ready) {
             bail!("service is not ready: {:?}", self.0);
         }
@@ -530,7 +548,7 @@ impl ServiceManager {
 
     /// 刷新服务状态只记录观察结果；安装和修复必须由前端显式请求。
     pub async fn refresh(&mut self) -> Result<()> {
-        let status = bound_service_probe(self.check_service_comprehensive(), SERVICE_IPC_PROBE_TIMEOUT).await;
+        let status = self.check_service_comprehensive().await;
         logging!(info, Type::Service, "服务状态检查结果: {:?}", status);
         self.0 = status;
         Ok(())
@@ -542,7 +560,7 @@ impl ServiceManager {
         if !is_service_ipc_path_exists() {
             return ServiceStatus::NotInstalled;
         }
-        match clash_verge_service_ipc::get_version().await {
+        match run_service_ipc(clash_verge_service_ipc::get_version(), SERVICE_IPC_PROBE_TIMEOUT).await {
             Ok(response) if response.code == 0 => match response.data {
                 Some(protocol)
                     if protocol.supports_client(
@@ -613,7 +631,7 @@ pub static SERVICE_MANAGER: Lazy<Mutex<ServiceManager>> = Lazy::new(|| Mutex::ne
 
 #[cfg(test)]
 mod tests {
-    use super::{ServiceStatus, bound_service_probe, escape_osascript_string, shell_quote};
+    use super::{escape_osascript_string, run_service_ipc, shell_quote};
     use std::time::Duration;
 
     #[test]
@@ -635,9 +653,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn timed_out_service_probe_is_unavailable() {
-        let status = bound_service_probe(std::future::pending(), Duration::ZERO).await;
+    async fn timed_out_service_ipc_request_returns_an_error() {
+        let error = run_service_ipc(std::future::pending::<anyhow::Result<()>>(), Duration::ZERO)
+            .await
+            .expect_err("a stalled IPC request must time out");
 
-        assert!(matches!(status, ServiceStatus::Unavailable(reason) if reason.contains("超时")));
+        assert!(error.to_string().contains("超时"));
     }
 }
