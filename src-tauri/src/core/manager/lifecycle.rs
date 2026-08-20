@@ -11,6 +11,10 @@ use scopeguard::defer;
 use smartstring::alias::String;
 use tauri_plugin_clash_verge_sysinfo;
 
+fn should_wait_for_service_startup(needs_tun: bool, service_ipc_path_exists: bool, status: &ServiceStatus) -> bool {
+    needs_tun && service_ipc_path_exists && matches!(status, ServiceStatus::Checking)
+}
+
 impl CoreManager {
     pub async fn start_core(&self) -> Result<()> {
         self.prepare_startup().await?;
@@ -89,7 +93,8 @@ impl CoreManager {
         }
 
         // 服务不是 Ready 状态，尝试初始化
-        if service::is_service_ipc_path_exists() {
+        let service_ipc_path_exists = service::is_service_ipc_path_exists();
+        if service_ipc_path_exists {
             logging!(info, Type::Core, "发现服务 IPC，尝试初始化服务管理器");
             if manager.init().await.is_ok() {
                 let _ = manager.refresh().await;
@@ -99,9 +104,10 @@ impl CoreManager {
         // TUN 开启时额外尝试等待服务启动
         {
             let needs_tun = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
-            if needs_tun && !matches!(manager.current(), ServiceStatus::Ready) {
+            if should_wait_for_service_startup(needs_tun, service_ipc_path_exists, &manager.current()) {
                 logging!(info, Type::Core, "TUN 模式需要服务，等待服务 IPC 就绪...");
-                // 给 LaunchDaemon 最多 12 秒启动时间（扩展等待）
+                // 仅在状态尚未解析时等待。连接已被拒绝时必须立即回退，避免陈旧
+                // socket 阻塞核心启动；安装/修复流程会自行等待服务 IPC 就绪。
                 let _ = service::wait_and_check_service_available_extended(&mut manager).await;
             }
 
@@ -139,5 +145,27 @@ impl CoreManager {
     fn after_core_process(&self) {
         let app_handle = Handle::app_handle();
         tauri_plugin_clash_verge_sysinfo::set_app_core_mode(app_handle, self.get_running_mode().to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_waits_for_an_unresolved_existing_service() {
+        assert!(should_wait_for_service_startup(true, true, &ServiceStatus::Checking));
+        assert!(!should_wait_for_service_startup(
+            true,
+            true,
+            &ServiceStatus::Unavailable("connection refused".into())
+        ));
+        assert!(!should_wait_for_service_startup(true, false, &ServiceStatus::Checking));
+        assert!(!should_wait_for_service_startup(
+            true,
+            true,
+            &ServiceStatus::NotInstalled
+        ));
+        assert!(!should_wait_for_service_startup(false, true, &ServiceStatus::Checking));
     }
 }
