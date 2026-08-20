@@ -1,3 +1,28 @@
+## v2.8.8
+
+> [!IMPORTANT]
+> 本版本修复 macOS ARM 上 service IPC 在残留 socket 或无响应时可能阻塞启动、托盘和服务操作的问题。
+
+### 🐞 修复问题
+
+- **启动回退可靠性**：service IPC 探测被限制在 3 秒内；超时会明确记录为「服务不可用」，核心直接使用 Sidecar 启动，不再出现 Mihomo 未启动、首页显示「暂无激活的代理节点」的情况。
+- **状态机防重复阻塞**：核心仅重试状态尚未解析的 service；已判定不可用的 service 不会再次进入阻塞探测或 TUN 等待路径。
+- **统一 IPC 截止时间**：版本探测、托盘状态、服务日志和 writer 更新、核心启动/停止及运行时暂存均经统一超时入口，避免后续调用绕过保护并导致前端 Promise 或后台任务长时间悬挂。
+- **超时回归测试**：覆盖永不返回的 IPC future，确保其会返回可处理的超时错误。
+
+### 🚀 更新
+
+- **发布资源**：Stable Mihomo 固定为 `v1.19.30`，Alpha Mihomo 更新为 `alpha-fe22fdd`，clash-verge-service 为 `v2.6.1`；已执行 `pnpm prebuild --force` 刷新并校验 GeoData。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm prebuild` 与 `pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.8_aarch64.dmg`，并通过 `hdiutil verify` 与 `codesign --verify --deep --strict` 校验（69,026,023 bytes），SHA256：`905aa8ccab6bda50749a343bf794312875b2b5eb4e66b257e27395d32b918d35`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.8.8_aarch64.dmg`。
+- **已知分发限制**：产物使用 ad-hoc 签名；因未配置 Apple Developer ID 与公证凭据，`spctl` 会拒绝该未公证应用。首次运行可能需要在 macOS「隐私与安全性」中手动允许。
+
+---
+
 ## v2.8.7
 
 > [!IMPORTANT]

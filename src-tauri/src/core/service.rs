@@ -654,10 +654,7 @@ mod tests {
 
     #[tokio::test]
     async fn timed_out_service_ipc_request_returns_an_error() {
-        let error = run_service_ipc(std::future::pending::<anyhow::Result<()>>(), Duration::ZERO)
-            .await
-            .expect_err("a stalled IPC request must time out");
-
-        assert!(error.to_string().contains("超时"));
+        let result = run_service_ipc(std::future::pending::<anyhow::Result<()>>(), Duration::ZERO).await;
+        assert!(result.is_err_and(|error| error.to_string().contains("超时")));
     }
 }

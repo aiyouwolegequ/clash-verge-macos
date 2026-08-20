@@ -1,6 +1,6 @@
 {
   "name": "clash-verge",
-  "version": "2.8.7",
+  "version": "2.8.8",
   "license": "GPL-3.0-only",
   "scripts": {
     "prepare": "husky || true",
@@ -8,8 +8,8 @@
     "dev:diff": "cross-env RUST_BACKTRACE=full tauri dev -f verge-dev",
     "dev:trace": "cross-env RUST_BACKTRACE=full RUSTFLAGS=\"--cfg tokio_unstable\" tauri dev -f verge-dev tokio-trace",
     "dev:tauri": "cross-env RUST_BACKTRACE=full tauri dev -f tauri-dev",
-    "build": "cross-env NODE_OPTIONS='--max-old-space-size=4096' tauri build --target aarch64-apple-darwin -b dmg && node scripts/rename-dmg.mjs",
-    "build:fast": "cross-env NODE_OPTIONS='--max-old-space-size=4096' tauri build --target aarch64-apple-darwin -b dmg -- --profile fast-release && node scripts/rename-dmg.mjs",
+    "build": "cross-env NODE_OPTIONS='--max-old-space-size=4096' tauri build --target aarch64-apple-darwin -b dmg && node scripts/adhoc-sign-dmg.mjs && node scripts/rename-dmg.mjs",
+    "build:fast": "cross-env NODE_OPTIONS='--max-old-space-size=4096' tauri build --target aarch64-apple-darwin -b dmg -- --profile fast-release && node scripts/adhoc-sign-dmg.mjs && node scripts/rename-dmg.mjs",
     "tauri": "tauri",
     "web:dev": "vite",
     "web:build": "tsc --noEmit && vite build",
