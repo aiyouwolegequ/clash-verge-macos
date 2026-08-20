@@ -11,7 +11,11 @@ use scopeguard::defer;
 use smartstring::alias::String;
 use tauri_plugin_clash_verge_sysinfo;
 
-fn should_wait_for_service_startup(needs_tun: bool, service_ipc_path_exists: bool, status: &ServiceStatus) -> bool {
+const fn should_wait_for_service_startup(
+    needs_tun: bool,
+    service_ipc_path_exists: bool,
+    status: &ServiceStatus,
+) -> bool {
     needs_tun && service_ipc_path_exists && matches!(status, ServiceStatus::Checking)
 }
 

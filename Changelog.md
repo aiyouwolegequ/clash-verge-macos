@@ -1,3 +1,25 @@
+## v2.8.7
+
+> [!IMPORTANT]
+> 本版本修复 macOS ARM 上 service IPC socket 存在但服务未监听时，Mihomo 无法启动的问题。
+
+### 🐞 修复问题
+
+- **Service IPC 不可用回退**：启动时检测到 service IPC 的连接被拒绝后，不再因 TUN 模式重复等待陈旧 socket；核心立即回退至 Sidecar 模式启动 Mihomo，避免首页显示「暂无激活的代理节点」及前端出现 `Connection refused`。
+- **启动状态回归测试**：覆盖 service IPC 路径存在但状态为 `Unavailable`、未安装与正常检查中的决策，确保只有状态尚未解析时才等待服务。
+
+### 🚀 更新
+
+- **发布资源**：Stable Mihomo 固定为 `v1.19.30`，clash-verge-service 为 `v2.6.1`；已执行 `pnpm prebuild --force` 刷新并校验 GeoData 与 Alpha Mihomo 资源。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm prebuild` 与 `pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.7_aarch64.dmg`（64,013,696 bytes），SHA256：`d7f6b4a7cc1d089fc3497ddf1574ac42cad4869d03ce512b85ad97c7e9350c48`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.8.7_aarch64.dmg`。
+
+---
+
 ## v2.8.6
 
 > [!IMPORTANT]
