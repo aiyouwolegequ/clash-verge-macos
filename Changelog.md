@@ -1,3 +1,33 @@
+## v2.9.1
+
+> [!IMPORTANT]
+> 本版本修复 macOS ARM 上 service 生命周期、TUN 启动和延迟测试的竞态问题，减少 Mihomo API 尚未就绪时出现的 `Connection refused` 与不完整 HTTP 响应错误。
+
+### 🐞 修复问题
+
+- **Service 生命周期串行化**：核心启动、停止、重启与配置更新共用操作锁，避免多个异步任务同时切换 Sidecar 和 Service；停止 Sidecar 后等待进程退出，异常退出时同步刷新运行状态。
+- **TUN 启动安全性**：非管理员模式下启用 TUN 时，如果 Service 不可用或协议不匹配，将明确返回错误，不再回退到无权限的 Sidecar；TUN 就绪检查只接受 Mihomo 的成功日志，并识别接口创建与配置失败日志。
+- **Service 会话一致性**：建立活动会话后立即配置日志 writer；只要 Service 会话有效且 Mihomo API 可访问，就保持 Service 模式，不因短暂探测失败启动第二个核心。
+- **IPC 并发控制**：移除无实际复用效果的 raw socket 队列，所有 IPC 请求改为共享信号量限流；达到并发上限时等待可用许可，避免临时扩容导致请求堆积和 Service 压力失控。
+- **配置事务完整性**：异步 Draft 修改使用互斥锁保护，配置与订阅更新按事务执行；失败时传播真实错误并恢复原状态，避免并发写入丢失或界面显示成功但配置未生效。
+- **延迟测试稳定性**：内置延迟地址统一升级为 HTTPS，前后端使用同一 URL 规范化规则；后端负责超时，前端以请求代次隔离过期结果，并在核心不可用时终止批量测试，减少重复错误日志。
+- **延迟状态刷新**：监听器支持同一代理组的多个视图，缓存键改为无歧义 JSON 编码；较晚返回的旧请求不再覆盖新一轮测试结果。
+
+### 🚀 更新
+
+- **发布资源**：Stable Mihomo 固定为 `v1.19.30`，Alpha Mihomo 为 `alpha-fe22fdd`，clash-verge-service 为 `v2.6.1`；已执行 `pnpm prebuild --force` 刷新并校验 GeoData。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `cargo test -p clash-verge-draft`，包括异步配置并发修改回归测试。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm prebuild` 与 `pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.9.1_aarch64.dmg`，并通过 `hdiutil verify` 与 `codesign --verify --deep --strict` 校验（69,035,440 bytes），SHA256：`78ff2961df38f4abebb6ff34a2cd17976b8d3533f065314f25af6ef280dc30af`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.9.1_aarch64.dmg`。
+- **架构核验**：镜像内主程序、Stable/Alpha Mihomo 和三个 service helper 均为 ARM64。
+- **已知分发限制**：产物使用 ad-hoc 签名；因未配置 Apple Developer ID 与公证凭据，Gatekeeper 不会将其识别为已公证应用。首次运行可能需要在 macOS「隐私与安全性」中手动允许。
+
+---
+
 ## v2.8.8
 
 > [!IMPORTANT]
