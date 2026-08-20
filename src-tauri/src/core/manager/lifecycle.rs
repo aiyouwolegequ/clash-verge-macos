@@ -104,6 +104,20 @@ impl CoreManager {
                 // 给 LaunchDaemon 最多 12 秒启动时间（扩展等待）
                 let _ = service::wait_and_check_service_available_extended(&mut manager).await;
             }
+
+            let is_admin = tauri_plugin_clash_verge_sysinfo::is_current_app_handle_admin(Handle::app_handle());
+            if needs_tun && !is_admin && !matches!(manager.current(), ServiceStatus::Ready) {
+                logging!(
+                    warn,
+                    Type::Core,
+                    "TUN requires an elevated process or a compatible service; disabling unavailable TUN mode"
+                );
+                let verge = Config::verge().await;
+                verge.edit_draft(|draft| draft.enable_tun_mode = Some(false));
+                verge.apply();
+                let verge_data = Config::verge().await.latest_arc();
+                verge_data.save_file().await?;
+            }
         }
 
         let mode = match manager.current() {

@@ -1,3 +1,29 @@
+## v2.8.6
+
+> [!IMPORTANT]
+> 本版本完成 macOS ARM 的 service IPC 迁移，并更新默认 Mihomo 内核。
+
+### 🐞 修复问题
+
+- **Service IPC 完整迁移**：客户端与打包 helper 统一为 `clash_verge_service_ipc v2.6.1`。启动请求绑定当前 macOS 用户与应用数据目录，并为本次核心生成独立会话令牌；停止核心与更新日志 writer 仅接受该会话。
+- **运行时文件隔离**：配置、GeoData、本地 provider 和远程 provider 的缓存声明为 `RuntimeBundle`。本地 provider 会校验在配置目录内，拒绝路径穿越与重复目标。
+- **状态探测**：socket 存在后继续校验 service 协议，不匹配时显示「需要重装」；普通探测不再自动发起需要管理员权限的安装或重装。
+- **配置更新性能**：service 支持 runtime staging 时，先暂存 generation 并让 Mihomo 热重载；拒绝、旧 service 或重载失败时回退至原有校验和重启流程。
+
+### 🚀 更新
+
+- **Mihomo 默认内核**：Stable Mihomo 默认固定为 `v1.19.30`；仍可通过 `MIHOMO_VERSION` 覆盖，或使用 `MIHOMO_USE_LATEST=1` 进行临时验证。
+- **macOS ARM 修复**：系统 DNS 状态写入应用数据目录；托盘图标切换与窗口恢复更稳定；IP 信息随机排序兼容 macOS 12。
+
+### ✅ 验证
+
+- 完成 `pnpm prebuild --force`：Stable Mihomo 为 `v1.19.30`，Alpha Mihomo 为 `alpha-fe22fdd`，clash-verge-service 为 `v2.6.1`，并刷新 GeoData。
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm prebuild` 与 `pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.6_aarch64.dmg`（64,015,362 bytes），SHA256：`450f6b1cf81fb66d4a7bc5314e22b0d7fadf069bb67cdb5d387f2240ce7bcc1a`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.8.6_aarch64.dmg`。
+
+---
+
 ## v2.8.4
 
 > [!IMPORTANT]

@@ -18,7 +18,7 @@ use log::{Level, LevelFilter, Record};
 use parking_lot::{Mutex, RwLock};
 
 use crate::{
-    core::service,
+    core::{CoreManager, manager::RunningMode, service},
     singleton,
     utils::dirs::{self, service_log_dir, sidecar_log_dir},
 };
@@ -175,15 +175,12 @@ impl Logger {
         let sidecar_writer = self.generate_sidecar_writer()?;
         *self.sidecar_file_writer.write() = Some(sidecar_writer);
 
-        // update service writer config
-        if service::is_service_ipc_path_exists() && service::is_service_available().await.is_ok() {
-            let service_log_dir = dirs::path_to_str(&service_log_dir()?)?.into();
-            clash_verge_service_ipc::update_writer(&WriterConfig {
-                directory: service_log_dir,
-                max_log_size: log_max_size * 1024,
-                max_log_files: log_max_count,
-            })
-            .await?;
+        // A writer update is scoped to the active service-owned Core session.
+        if matches!(*CoreManager::global().get_running_mode(), RunningMode::Service) {
+            let writer_config = self.service_writer_config()?;
+            if let Err(error) = service::update_writer_by_service(&writer_config).await {
+                logging!(warn, Type::Service, "failed to update service writer config: {error:#}");
+            }
         }
 
         Ok(())

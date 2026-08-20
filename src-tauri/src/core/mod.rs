@@ -5,6 +5,8 @@ pub mod hotkey;
 pub mod logger;
 pub mod manager;
 mod notification;
+mod owner_identity;
+mod runtime_bundle;
 pub mod service;
 pub mod sysopt;
 pub mod timer;

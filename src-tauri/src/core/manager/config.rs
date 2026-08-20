@@ -1,15 +1,17 @@
-use super::CoreManager;
+use super::{CoreManager, RunningMode};
 use crate::{
     config::{Config, ConfigType, runtime::IRuntime},
     constants::timing,
     core::{
         handle,
+        service::{self, StageRequest},
         validate::{CoreConfigValidator, ValidationOutcome, ValidationSkipReason},
     },
     utils::{dirs, help},
 };
 use anyhow::{Result, anyhow};
 use clash_verge_logging::{Type, logging};
+use clash_verge_service_ipc::StageRuntimeOutcome;
 use smartstring::alias::String;
 use std::{collections::HashSet, time::Instant};
 use tauri_plugin_mihomo::Error as MihomoError;
@@ -124,6 +126,56 @@ impl CoreManager {
         };
 
         let path_str = dirs::path_to_str(&run_path)?;
+
+        // Service IPC v2 can stage the complete runtime generation in place. Only use the
+        // staged path after Mihomo accepts a reload; every other outcome falls back to the
+        // existing validate-and-restart path below.
+        if matches!(*self.get_running_mode(), RunningMode::Service)
+            && service::active_service_supports_runtime_staging()
+        {
+            match service::stage_runtime_by_service(&run_path).await {
+                Ok(StageRequest::Answered(StageRuntimeOutcome::Staged { config_path })) => {
+                    match self.reload_config(&config_path).await {
+                        Ok(()) => {
+                            Config::runtime().await.apply();
+                            logging!(info, Type::Core, "Configuration staged and hot-reloaded by service");
+                            if has_backup {
+                                let _ = tokio::fs::remove_file(&backup_path).await;
+                            }
+                            return Ok(ValidationOutcome::Valid);
+                        }
+                        Err(error) => logging!(
+                            warn,
+                            Type::Core,
+                            "Staged configuration reload failed: {error}; falling back to restart"
+                        ),
+                    }
+                }
+                Ok(StageRequest::Refused { code, message }) if StageRequest::is_about_the_bundle(code) => {
+                    if has_backup {
+                        let _ = tokio::fs::copy(&backup_path, &run_path).await;
+                        let _ = tokio::fs::remove_file(&backup_path).await;
+                    }
+                    Config::runtime().await.discard();
+                    return Err(anyhow!("Service refused the runtime bundle: {message}"));
+                }
+                Ok(StageRequest::Answered(StageRuntimeOutcome::RestartRequired { reason })) => logging!(
+                    info,
+                    Type::Core,
+                    "Service requested a core restart after staging: {reason:?}"
+                ),
+                Ok(StageRequest::Refused { code, message }) => logging!(
+                    warn,
+                    Type::Core,
+                    "Service refused runtime staging ({code}): {message}; falling back to restart"
+                ),
+                Err(error) => logging!(
+                    warn,
+                    Type::Core,
+                    "Runtime staging did not complete: {error:#}; falling back to restart"
+                ),
+            }
+        }
 
         // 3. Try to hot-reload config directly via REST API first (fast path)
         match self.reload_config(path_str).await {

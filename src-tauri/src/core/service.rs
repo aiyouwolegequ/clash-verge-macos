@@ -1,32 +1,104 @@
 use crate::{
-    config::{Config, IClashTemp},
-    core::{logger::Logger, tray::Tray},
+    config::Config,
+    core::{owner_identity::current_owner_credentials, runtime_bundle::collect_runtime_bundle, tray::Tray},
     utils::dirs,
 };
 use anyhow::{Context as _, Result, anyhow, bail};
 use backon::{ConstantBuilder, Retryable as _};
-use clash_verge_logging::{Type, logging, logging_error};
-use clash_verge_service_ipc::CoreConfig;
+use clash_verge_logging::{Type, logging};
+use clash_verge_service_ipc::{
+    OwnerSessionProof, ServiceErrorCode, StageRuntimeOutcome, StartClashRequest, WriterConfig,
+};
 use compact_str::CompactString;
 use once_cell::sync::Lazy;
-use std::{
-    borrow::Cow,
-    env::current_exe,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use parking_lot::Mutex as ParkingMutex;
+use std::{borrow::Cow, env::current_exe, path::Path, time::Duration};
 use tokio::sync::Mutex;
+
+static ACTIVE_SERVICE_SESSION: Lazy<ParkingMutex<Option<ActiveServiceSession>>> = Lazy::new(|| ParkingMutex::new(None));
+
+#[derive(Clone)]
+struct ActiveServiceSession {
+    proof: OwnerSessionProof,
+    supports_runtime_staging: bool,
+}
+
+fn generate_service_session_token() -> Result<String> {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).context("failed to generate service owner session")?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn active_service_session() -> Result<OwnerSessionProof> {
+    ACTIVE_SERVICE_SESSION
+        .lock()
+        .as_ref()
+        .map(|session| session.proof.clone())
+        .context("service owner session is not active")
+}
+
+pub(crate) fn active_service_supports_runtime_staging() -> bool {
+    ACTIVE_SERVICE_SESSION
+        .lock()
+        .as_ref()
+        .is_some_and(|session| session.supports_runtime_staging)
+}
+
+fn clear_active_service_session() {
+    ACTIVE_SERVICE_SESSION.lock().take();
+}
+
+async fn probe_runtime_staging_support() -> bool {
+    match clash_verge_service_ipc::get_version().await {
+        Ok(response) if response.code == 0 => response
+            .data
+            .as_ref()
+            .is_some_and(clash_verge_service_ipc::ProtocolInfo::supports_runtime_staging),
+        Ok(response) => {
+            logging!(
+                warn,
+                Type::Service,
+                "service protocol query returned {}: {}; runtime staging is unavailable",
+                response.code,
+                response.message
+            );
+            false
+        }
+        Err(error) => {
+            logging!(
+                warn,
+                Type::Service,
+                "unable to query service protocol: {error:#}; runtime staging is unavailable"
+            );
+            false
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum ServiceStatus {
+    Checking,
     Ready,
+    NotInstalled,
     NeedsReinstall,
     InstallRequired,
     UninstallRequired,
     ReinstallRequired,
     ForceReinstallRequired,
+    SidecarAllowed,
     Unavailable(String),
+}
+
+pub(super) enum StageRequest {
+    Refused { code: u16, message: CompactString },
+    Answered(StageRuntimeOutcome),
+}
+
+impl StageRequest {
+    pub(super) const fn is_about_the_bundle(code: u16) -> bool {
+        code == ServiceErrorCode::InvalidRuntimeAsset as u16 || code == ServiceErrorCode::InvalidInstallLocation as u16
+    }
 }
 
 #[derive(Clone)]
@@ -189,8 +261,9 @@ async fn force_reinstall_service() -> Result<()> {
 }
 
 /// 尝试使用服务启动core
-pub(super) async fn start_with_existing_service(config_file: &PathBuf) -> Result<()> {
+pub(super) async fn start_with_existing_service(config_file: &Path) -> Result<()> {
     logging!(info, Type::Service, "尝试使用现有服务启动核心");
+    clear_active_service_session();
 
     let verge_config = Config::verge().await;
     let clash_core = verge_config.latest_arc().get_valid_clash_core();
@@ -198,33 +271,18 @@ pub(super) async fn start_with_existing_service(config_file: &PathBuf) -> Result
 
     let bin_path = current_exe()?.with_file_name(clash_core.as_str());
 
-    let payload = clash_verge_service_ipc::ClashConfig {
-        core_config: CoreConfig {
-            config_path: dirs::path_to_str(config_file)?.into(),
-            core_path: dirs::path_to_str(&bin_path)?.into(),
-            core_ipc_path: IClashTemp::guard_external_controller_ipc(),
-            config_dir: dirs::path_to_str(&dirs::app_home_dir()?)?.into(),
-        },
-        log_config: Logger::global().service_writer_config()?,
+    let credentials = current_owner_credentials()?;
+    let runtime = collect_runtime_bundle(config_file, &bin_path).await?;
+    let proposed_session_token = generate_service_session_token()?;
+    let request = StartClashRequest {
+        runtime,
+        proposed_session_token: proposed_session_token.clone(),
+        macos_proxy: None,
     };
 
-    // Retry start_clash with backoff — the service may not be fully initialized
-    // immediately after install/restart on macOS.
-    use backon::{ExponentialBuilder, Retryable as _};
-    let backoff = ExponentialBuilder::default()
-        .with_min_delay(std::time::Duration::from_millis(200))
-        .with_max_delay(std::time::Duration::from_secs(3))
-        .with_max_times(5);
-
-    let response = (|| async {
-        clash_verge_service_ipc::start_clash(&payload).await.map_err(|e| {
-            logging!(warn, Type::Service, "start_clash attempt failed: {}", e);
-            e
-        })
-    })
-    .retry(backoff)
-    .await
-    .context("无法连接到Clash Verge Service")?;
+    let response = clash_verge_service_ipc::start_clash(&credentials, &request)
+        .await
+        .context("无法连接到Clash Verge Service")?;
 
     if response.code > 0 {
         let err_msg = response.message;
@@ -232,12 +290,20 @@ pub(super) async fn start_with_existing_service(config_file: &PathBuf) -> Result
         bail!(err_msg);
     }
 
-    logging!(info, Type::Service, "服务成功启动核心");
+    let result = response.data.context("Clash Verge Service 未返回会话信息")?;
+    *ACTIVE_SERVICE_SESSION.lock() = Some(ActiveServiceSession {
+        proof: OwnerSessionProof {
+            generation: result.session.generation,
+            token: proposed_session_token,
+        },
+        supports_runtime_staging: probe_runtime_staging_support().await,
+    });
+    logging!(info, Type::Service, "服务成功启动核心，已建立所有权会话");
     Ok(())
 }
 
 /// 以服务启动core — 确认服务就绪后启动
-pub(super) async fn run_core_by_service(config_file: &PathBuf) -> Result<()> {
+pub(super) async fn run_core_by_service(config_file: &Path) -> Result<()> {
     logging!(info, Type::Service, "正在尝试通过服务启动核心");
 
     // 确保服务可连接，无需 refresh 整个状态机（避免不必要的重装逻辑）
@@ -256,7 +322,8 @@ pub(super) async fn run_core_by_service(config_file: &PathBuf) -> Result<()> {
 }
 
 pub(super) async fn get_clash_logs_by_service() -> Result<Vec<CompactString>> {
-    let response = clash_verge_service_ipc::get_clash_logs()
+    let credentials = current_owner_credentials()?;
+    let response = clash_verge_service_ipc::get_clash_logs(&credentials)
         .await
         .context("无法连接到Clash Verge Service")?;
 
@@ -273,7 +340,9 @@ pub(super) async fn get_clash_logs_by_service() -> Result<Vec<CompactString>> {
 pub(super) async fn stop_core_by_service() -> Result<()> {
     logging!(info, Type::Service, "通过服务停止核心 (IPC)");
 
-    let response = clash_verge_service_ipc::stop_clash()
+    let credentials = current_owner_credentials()?;
+    let session = active_service_session()?;
+    let response = clash_verge_service_ipc::stop_clash(&credentials, &session)
         .await
         .context("无法连接到Clash Verge Service")?;
 
@@ -283,16 +352,60 @@ pub(super) async fn stop_core_by_service() -> Result<()> {
         bail!(err_msg);
     }
 
+    clear_active_service_session();
     logging!(info, Type::Service, "服务成功停止核心");
     Ok(())
 }
 
+pub(crate) async fn update_writer_by_service(writer: &WriterConfig) -> Result<()> {
+    let credentials = current_owner_credentials()?;
+    let session = active_service_session()?;
+    let response = clash_verge_service_ipc::update_writer(&credentials, &session, writer)
+        .await
+        .context("无法连接到Clash Verge Service")?;
+    if response.code > 0 {
+        bail!(response.message);
+    }
+    Ok(())
+}
+
+pub(super) async fn stage_runtime_by_service(config_file: &Path) -> Result<StageRequest> {
+    let credentials = current_owner_credentials()?;
+    let session = active_service_session()?;
+    let verge_config = Config::verge().await;
+    let clash_core = verge_config.latest_arc().get_valid_clash_core();
+    drop(verge_config);
+    let core_path = current_exe()?.with_file_name(clash_core.as_str());
+    let runtime = collect_runtime_bundle(config_file, &core_path).await?;
+
+    let response = clash_verge_service_ipc::stage_runtime(&credentials, &session, &runtime)
+        .await
+        .context("无法连接到Clash Verge Service")?;
+    if response.code > 0 {
+        return Ok(StageRequest::Refused {
+            code: response.code,
+            message: response.message.into(),
+        });
+    }
+    response
+        .data
+        .map(StageRequest::Answered)
+        .context("Clash Verge Service 未返回运行时暂存结果")
+}
+
 /// 检查服务是否正在运行（供前端 is_service_available 命令使用）
 pub async fn is_service_available() -> Result<()> {
-    if let Err(e) = Path::metadata(clash_verge_service_ipc::IPC_PATH.as_ref()) {
-        return Err(e.into());
+    Path::metadata(clash_verge_service_ipc::IPC_PATH.as_ref())?;
+    let response = clash_verge_service_ipc::get_version().await?;
+    let protocol = response.data.context("service did not return protocol information")?;
+    if response.code != 0
+        || !protocol.supports_client(
+            clash_verge_service_ipc::ProtocolVersion::current(),
+            clash_verge_service_ipc::MIN_REQUIRED_SERVICE_REVISION,
+        )
+    {
+        bail!("service IPC protocol is incompatible: {}", response.message);
     }
-    clash_verge_service_ipc::connect().await?;
     Ok(())
 }
 
@@ -303,7 +416,7 @@ async fn try_connect_service() -> Result<()> {
         .with_max_times(3);
 
     (|| async {
-        clash_verge_service_ipc::connect().await.map_err(|e| {
+        is_service_available().await.map_err(|e| {
             logging!(trace, Type::Service, "connect attempt: {}", e);
             e
         })
@@ -328,7 +441,7 @@ pub async fn wait_and_check_service_available_extended(status: &mut ServiceManag
 
     let result = (|| async {
         if Path::new(clash_verge_service_ipc::IPC_PATH).exists() {
-            clash_verge_service_ipc::connect().await?;
+            is_service_available().await?;
             Ok(())
         } else {
             Err(anyhow!("IPC path not ready"))
@@ -357,7 +470,7 @@ async fn wait_for_service_ipc(status: &mut ServiceManager, reason: &str) -> Resu
 
     let result = (|| async {
         if Path::new(clash_verge_service_ipc::IPC_PATH).exists() {
-            clash_verge_service_ipc::connect().await?;
+            is_service_available().await?;
             Ok(())
         } else {
             Err(anyhow!("IPC path not ready"))
@@ -381,8 +494,8 @@ pub fn is_service_ipc_path_exists() -> bool {
 }
 
 impl ServiceManager {
-    pub fn default() -> Self {
-        Self(ServiceStatus::Unavailable("Need Checks".into()))
+    pub const fn default() -> Self {
+        Self(ServiceStatus::Checking)
     }
 
     pub const fn config() -> clash_verge_service_ipc::IpcConfig {
@@ -395,11 +508,10 @@ impl ServiceManager {
 
     /// 初始化服务管理器：尝试连接并更新状态
     pub async fn init(&mut self) -> Result<()> {
-        if let Err(e) = clash_verge_service_ipc::connect().await {
-            self.0 = ServiceStatus::Unavailable(format!("服务连接失败: {e}"));
-            return Err(e);
+        self.0 = self.check_service_comprehensive().await;
+        if !matches!(self.0, ServiceStatus::Ready) {
+            bail!("service is not ready: {:?}", self.0);
         }
-        self.0 = ServiceStatus::Ready;
         logging!(info, Type::Service, "服务管理器初始化完成，服务可连接");
         Ok(())
     }
@@ -408,30 +520,34 @@ impl ServiceManager {
         self.0.clone()
     }
 
-    /// 刷新服务状态：检查 + 按需处理（仅 refresh 内部调用 handle_service_status）
+    /// 刷新服务状态只记录观察结果；安装和修复必须由前端显式请求。
     pub async fn refresh(&mut self) -> Result<()> {
         let status = self.check_service_comprehensive().await;
         logging!(info, Type::Service, "服务状态检查结果: {:?}", status);
-        self.0 = status.clone();
-        // refresh 路径使用 logging_error 吞掉错误（Unavailable 时不应阻断启动流程）
-        logging_error!(Type::Service, self.handle_service_status(&status).await);
+        self.0 = status;
         Ok(())
     }
 
     /// 综合服务状态检查（一次性完成所有检查）
     pub async fn check_service_comprehensive(&self) -> ServiceStatus {
-        // 首先检查 IPC 路径是否存在
+        // IPC 路径不存在表示 service 未安装；路径存在但协议探测失败则保留为可修复错误。
         if !is_service_ipc_path_exists() {
-            return ServiceStatus::Unavailable("IPC socket not found".into());
+            return ServiceStatus::NotInstalled;
         }
-
-        {
-            // Skip the version check (is_reinstall_service_needed)
-            // which causes infinite reinstall loops. Just check if we can connect.
-            match try_connect_service().await {
-                Ok(()) => ServiceStatus::Ready,
-                Err(e) => ServiceStatus::Unavailable(format!("macOS 服务连接失败: {e}")),
-            }
+        match clash_verge_service_ipc::get_version().await {
+            Ok(response) if response.code == 0 => match response.data {
+                Some(protocol)
+                    if protocol.supports_client(
+                        clash_verge_service_ipc::ProtocolVersion::current(),
+                        clash_verge_service_ipc::MIN_REQUIRED_SERVICE_REVISION,
+                    ) =>
+                {
+                    ServiceStatus::Ready
+                }
+                _ => ServiceStatus::NeedsReinstall,
+            },
+            Ok(_) => ServiceStatus::NeedsReinstall,
+            Err(error) => ServiceStatus::Unavailable(format!("macOS 服务连接失败: {error}")),
         }
     }
 
@@ -443,6 +559,12 @@ impl ServiceManager {
             ServiceStatus::Ready => {
                 logging!(info, Type::Service, "服务就绪");
                 self.0 = ServiceStatus::Ready;
+            }
+            ServiceStatus::Checking => {
+                self.0 = ServiceStatus::Checking;
+            }
+            ServiceStatus::NotInstalled | ServiceStatus::SidecarAllowed => {
+                self.0 = status.clone();
             }
             ServiceStatus::NeedsReinstall | ServiceStatus::ReinstallRequired => {
                 logging!(info, Type::Service, "服务需要重装，执行重装流程");
