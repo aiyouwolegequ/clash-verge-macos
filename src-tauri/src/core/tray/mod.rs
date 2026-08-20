@@ -238,13 +238,9 @@ impl Tray {
 
         let (_is_custom_icon, icon_bytes) = TrayState::get_tray_icon(verge).await;
 
-        logging_error!(
-            Type::Tray,
-            tray.set_icon(Some(tauri::image::Image::from_bytes(&icon_bytes)?))
-        );
-
-        let is_colorful = verge.tray_icon.as_deref().unwrap_or("monochrome") == "colorful";
-        logging_error!(Type::Tray, tray.set_icon_as_template(!is_colorful));
+        let template = verge.tray_icon.as_ref().is_none_or(|value| value == "monochrome");
+        let icon = Some(tauri::image::Image::from_bytes(&icon_bytes)?);
+        logging_error!(Type::Tray, tray.set_icon_with_as_template(icon, template));
 
         Ok(())
     }

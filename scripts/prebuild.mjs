@@ -167,7 +167,7 @@ const USE_LATEST_MIHOMO =
   process.env.MIHOMO_USE_LATEST === '1' ||
   process.env.MIHOMO_USE_LATEST === 'true'
 const PINNED_META_ALPHA_VERSION = process.env.MIHOMO_ALPHA_VERSION
-const PINNED_META_VERSION = process.env.MIHOMO_VERSION || 'v1.19.25'
+const PINNED_META_VERSION = process.env.MIHOMO_VERSION || 'v1.19.30'
 
 const META_ALPHA_MAP = {
   'darwin-arm64': 'mihomo-darwin-arm64-go122',

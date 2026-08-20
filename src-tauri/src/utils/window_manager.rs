@@ -218,6 +218,8 @@ impl WindowManager {
     fn activate_window(window: &WebviewWindow<Wry>) -> WindowOperationResult {
         logging!(info, Type::Window, "开始激活窗口");
 
+        handle::Handle::global().set_activation_policy_regular();
+
         let mut operations_successful = true;
 
         // 1. 如果窗口最小化，先取消最小化
@@ -240,10 +242,6 @@ impl WindowManager {
             logging!(warn, Type::Window, "设置窗口焦点失败: {}", e);
             operations_successful = false;
         }
-
-        // 4. 设置激活策略
-        logging!(info, Type::Window, "设置窗口激活策略");
-        handle::Handle::global().set_activation_policy_regular();
 
         if operations_successful {
             logging!(info, Type::Window, "窗口激活成功");
@@ -279,10 +277,11 @@ impl WindowManager {
                 return false;
             }
 
+            handle::Handle::global().set_activation_policy_regular();
+
             match build_new_window().await {
                 Ok(_) => {
                     logging!(info, Type::Window, "新窗口创建成功，等待前端渲染后显示");
-                    handle::Handle::global().set_activation_policy_regular();
                     true
                 }
                 Err(e) => {
