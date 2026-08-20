@@ -1,3 +1,24 @@
+## v2.8.4
+
+> [!IMPORTANT]
+> 本版本修复 macOS 虚拟网卡模式安装后出现「IPC path not ready」的问题。
+
+### 🐞 修复问题
+
+- **Service IPC 版本一致性**：预构建脚本不再下载最新 service helper，而是直接读取 `src-tauri/Cargo.toml` 中的 `clash_verge_service_ipc` 版本。客户端与打包 helper 统一为 `v2.3.0`，均使用 `/tmp/verge/clash-verge-service.sock`，避免 LaunchDaemon 已启动但客户端等待另一条 IPC 路径。
+
+### 🚀 更新
+
+- **发布资源刷新**：`pnpm prebuild --force` 已刷新 Alpha Mihomo 至 `alpha-fe22fdd`，Stable Mihomo 保持 pinned `v1.19.25`，clash-verge-service 固定为 `v2.3.0`，并刷新 GeoData。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm prebuild` 与 `pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.8.4_aarch64.dmg`（61,786,601 bytes），SHA256：`92529b4e024d3810a95aac23eac54cf922fef18e3f02f6167803addc63edfd85`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.8.4_aarch64.dmg`。
+
+---
+
 ## v2.8.3
 
 > [!IMPORTANT]
