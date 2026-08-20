@@ -138,10 +138,11 @@ impl CoreManager {
 
         let path_str = dirs::path_to_str(&run_path)?;
 
-        // Service IPC v2 can stage the complete runtime generation in place. Only use the
-        // staged path after Mihomo accepts a reload; every other outcome falls back to the
-        // existing validate-and-restart path below.
-        if matches!(*self.get_running_mode(), RunningMode::Service)
+        // Service IPC v2 can stage the complete runtime generation in place. macOS Mihomo
+        // rejects the staged config because the service runtime is outside its allowed home
+        // directory, so use the existing API reload/restart flow there instead.
+        if !cfg!(target_os = "macos")
+            && matches!(*self.get_running_mode(), RunningMode::Service)
             && service::active_service_supports_runtime_staging()
         {
             match service::stage_runtime_by_service(&run_path).await {
@@ -188,59 +189,53 @@ impl CoreManager {
             }
         }
 
-        // 3. Try to hot-reload config directly via REST API first (fast path)
-        match self.reload_config(path_str).await {
-            Ok(_) => {
-                Config::runtime().await.apply();
-                logging!(info, Type::Core, "Configuration hot-reloaded successfully");
-                if has_backup {
-                    let _ = tokio::fs::remove_file(&backup_path).await;
+        // 3. A macOS Service keeps its runtime in a private directory. Mihomo therefore rejects
+        // an API reload pointing at the app-owned config path, so skip the known-failing request
+        // and proceed directly to validation plus a controlled Service restart.
+        if cfg!(target_os = "macos") && matches!(*self.get_running_mode(), RunningMode::Service) {
+            logging!(
+                info,
+                Type::Core,
+                "Skipping API config reload for macOS Service; validating before controlled restart"
+            );
+        } else {
+            // Try to hot-reload config directly via REST API first (fast path).
+            match self.reload_config(path_str).await {
+                Ok(_) => {
+                    Config::runtime().await.apply();
+                    logging!(info, Type::Core, "Configuration hot-reloaded successfully");
+                    if has_backup {
+                        let _ = tokio::fs::remove_file(&backup_path).await;
+                    }
+                    return Ok(ValidationOutcome::Valid);
                 }
-                Ok(ValidationOutcome::Valid)
-            }
-            Err(reload_err) => {
-                logging!(
+                Err(reload_err) => logging!(
                     warn,
                     Type::Core,
                     "Failed to reload config via API: {reload_err}. Running sidecar validator to check configuration correctness..."
-                );
+                ),
+            }
+        }
 
-                // 4. Run sidecar validator to check configuration validity
-                match CoreConfigValidator::global().validate_config_outcome().await {
-                    Ok(outcome) if outcome.is_valid() => {
-                        logging!(
-                            info,
-                            Type::Core,
-                            "Configuration is valid. Attempting core restart to apply configuration..."
-                        );
-                        match self.restart_core_unlocked().await {
-                            Ok(_) => {
-                                Config::runtime().await.apply();
-                                logging!(info, Type::Core, "Configuration applied after core restart");
-                                if has_backup {
-                                    let _ = tokio::fs::remove_file(&backup_path).await;
-                                }
-                                Ok(ValidationOutcome::Valid)
-                            }
-                            Err(restart_err) => {
-                                logging!(error, Type::Core, "Failed to restart core: {restart_err}");
-                                if has_backup {
-                                    if let Err(restore_err) = tokio::fs::copy(&backup_path, &run_path).await {
-                                        logging!(error, Type::Core, "Failed to restore backup config: {restore_err}");
-                                    }
-                                    let _ = tokio::fs::remove_file(&backup_path).await;
-                                }
-                                Config::runtime().await.discard();
-                                Err(anyhow!("Failed to apply config: {restart_err}"))
-                            }
+        // 4. Run sidecar validator before applying the generated config with a restart.
+        match CoreConfigValidator::global().validate_config_outcome().await {
+            Ok(outcome) if outcome.is_valid() => {
+                logging!(
+                    info,
+                    Type::Core,
+                    "Configuration is valid. Attempting core restart to apply configuration..."
+                );
+                match self.restart_core_unlocked().await {
+                    Ok(_) => {
+                        Config::runtime().await.apply();
+                        logging!(info, Type::Core, "Configuration applied after core restart");
+                        if has_backup {
+                            let _ = tokio::fs::remove_file(&backup_path).await;
                         }
+                        Ok(ValidationOutcome::Valid)
                     }
-                    Ok(outcome) => {
-                        logging!(
-                            warn,
-                            Type::Core,
-                            "Configuration is invalid: {outcome}. Restoring backup..."
-                        );
+                    Err(restart_err) => {
+                        logging!(error, Type::Core, "Failed to restart core: {restart_err}");
                         if has_backup {
                             if let Err(restore_err) = tokio::fs::copy(&backup_path, &run_path).await {
                                 logging!(error, Type::Core, "Failed to restore backup config: {restore_err}");
@@ -248,24 +243,39 @@ impl CoreManager {
                             let _ = tokio::fs::remove_file(&backup_path).await;
                         }
                         Config::runtime().await.discard();
-                        Ok(outcome)
-                    }
-                    Err(validate_err) => {
-                        logging!(
-                            error,
-                            Type::Core,
-                            "Validation process failed: {validate_err}. Restoring backup..."
-                        );
-                        if has_backup {
-                            if let Err(restore_err) = tokio::fs::copy(&backup_path, &run_path).await {
-                                logging!(error, Type::Core, "Failed to restore backup config: {restore_err}");
-                            }
-                            let _ = tokio::fs::remove_file(&backup_path).await;
-                        }
-                        Config::runtime().await.discard();
-                        Err(validate_err)
+                        Err(anyhow!("Failed to apply config: {restart_err}"))
                     }
                 }
+            }
+            Ok(outcome) => {
+                logging!(
+                    warn,
+                    Type::Core,
+                    "Configuration is invalid: {outcome}. Restoring backup..."
+                );
+                if has_backup {
+                    if let Err(restore_err) = tokio::fs::copy(&backup_path, &run_path).await {
+                        logging!(error, Type::Core, "Failed to restore backup config: {restore_err}");
+                    }
+                    let _ = tokio::fs::remove_file(&backup_path).await;
+                }
+                Config::runtime().await.discard();
+                Ok(outcome)
+            }
+            Err(validate_err) => {
+                logging!(
+                    error,
+                    Type::Core,
+                    "Validation process failed: {validate_err}. Restoring backup..."
+                );
+                if has_backup {
+                    if let Err(restore_err) = tokio::fs::copy(&backup_path, &run_path).await {
+                        logging!(error, Type::Core, "Failed to restore backup config: {restore_err}");
+                    }
+                    let _ = tokio::fs::remove_file(&backup_path).await;
+                }
+                Config::runtime().await.discard();
+                Err(validate_err)
             }
         }
     }

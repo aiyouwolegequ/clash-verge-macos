@@ -182,6 +182,7 @@ mod app_init {
             cmd::import_profile,
             cmd::reorder_profile,
             cmd::update_profile,
+            cmd::update_profiles,
             cmd::delete_profile,
             cmd::read_profile_file,
             cmd::save_profile_file,

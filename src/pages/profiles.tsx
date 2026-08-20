@@ -26,7 +26,6 @@ import { TauriEvent } from '@tauri-apps/api/event'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useLockFn } from 'ahooks'
-import { throttle } from 'lodash-es'
 import {
   useCallback,
   useEffect,
@@ -58,11 +57,15 @@ import {
   getRuntimeLogs,
   importProfile,
   reorderProfile,
-  updateProfile,
+  updateProfiles,
 } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
 import { queryClient } from '@/services/query-client'
-import { useSetLoadingCache, useThemeMode } from '@/services/states'
+import {
+  useLoadingCache,
+  useSetLoadingCache,
+  useThemeMode,
+} from '@/services/states'
 import { debugLog } from '@/utils/debug'
 
 // 记录profile切换状态
@@ -623,34 +626,31 @@ const ProfilePage = () => {
   })
 
   // 更新所有订阅
+  const loadingCache = useLoadingCache()
   const setLoadingCache = useSetLoadingCache()
   const onUpdateAll = useLockFn(async () => {
-    const throttleMutate = throttle(mutateProfiles, 2000, {
-      trailing: true,
-    })
-    const updateOne = async (uid: string) => {
-      try {
-        await updateProfile(uid)
-        throttleMutate()
-      } catch (err: any) {
-        console.error(`更新订阅 ${uid} 失败:`, err)
-      } finally {
-        setLoadingCache((cache) => ({ ...cache, [uid]: false }))
-      }
+    const items = profileItems.filter(
+      (item) => item.type === 'remote' && !loadingCache[item.uid],
+    )
+    const indices = items.map((item) => item.uid)
+    if (!indices.length) return
+
+    setLoadingCache((cache) => ({
+      ...cache,
+      ...Object.fromEntries(indices.map((uid) => [uid, true])),
+    }))
+
+    try {
+      await updateProfiles(indices)
+      await mutateProfiles()
+    } catch (err: any) {
+      console.error('批量更新订阅失败:', err)
+    } finally {
+      setLoadingCache((cache) => ({
+        ...cache,
+        ...Object.fromEntries(indices.map((uid) => [uid, false])),
+      }))
     }
-
-    return new Promise((resolve) => {
-      setLoadingCache((cache) => {
-        // 获取没有正在更新的订阅
-        const items = profileItems.filter(
-          (e) => e.type === 'remote' && !cache[e.uid],
-        )
-        const change = Object.fromEntries(items.map((e) => [e.uid, true]))
-
-        Promise.allSettled(items.map((e) => updateOne(e.uid))).then(resolve)
-        return { ...cache, ...change }
-      })
-    })
   })
 
   const onCopyLink = async () => {

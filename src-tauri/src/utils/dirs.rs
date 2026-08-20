@@ -22,6 +22,7 @@ pub static PORTABLE_FLAG: OnceCell<bool> = OnceCell::new();
 pub static CLASH_CONFIG: &str = "config.yaml";
 pub static VERGE_CONFIG: &str = "verge.yaml";
 pub static PROFILE_YAML: &str = "profiles.yaml";
+pub static LOG_VERSION_DIR: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 
 /// init portable flag
 pub fn init_portable_flag() -> Result<()> {
@@ -108,9 +109,14 @@ pub fn find_target_icons(target: &str) -> Result<Option<String>> {
     icon_path.map(|path| path_to_str(&path).map(|s| s.into())).transpose()
 }
 
-/// logs dir
-pub fn app_logs_dir() -> Result<PathBuf> {
+/// Root directory containing logs from every app version.
+pub fn app_logs_root_dir() -> Result<PathBuf> {
     Ok(app_home_dir()?.join("logs"))
+}
+
+/// Log directory for the current app version.
+pub fn app_logs_dir() -> Result<PathBuf> {
+    Ok(app_logs_root_dir()?.join(LOG_VERSION_DIR))
 }
 
 // latest verge log

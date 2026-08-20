@@ -11,6 +11,7 @@ use clash_verge_logging::Type;
 use compact_str::CompactString;
 use log::Level;
 use std::{future::Future, time::Duration};
+use tauri_plugin_mihomo::MihomoExt as _;
 use tauri_plugin_shell::ShellExt as _;
 
 const CORE_API_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -115,6 +116,15 @@ async fn wait_for_core_api_ready() -> Result<()> {
     .await
 }
 
+async fn update_mihomo_socket_path(socket_path: String) -> Result<()> {
+    handle::Handle::app_handle()
+        .mihomo()
+        .write()
+        .await
+        .update_socket_path(socket_path)?;
+    Ok(())
+}
+
 async fn wait_for_core_api_unavailable() -> Result<()> {
     tokio::time::timeout(CORE_SHUTDOWN_TIMEOUT, async {
         loop {
@@ -164,6 +174,8 @@ impl CoreManager {
             let _ = Command::new("pkill").arg("-f").arg("verge-mihomo").output();
             wait_for_core_api_unavailable().await?;
         }
+
+        update_mihomo_socket_path(IClashTemp::guard_external_controller_ipc()).await?;
 
         let config_file = Config::generate_file(crate::config::ConfigType::Run).await?;
         let app_handle = handle::Handle::app_handle();
@@ -264,6 +276,7 @@ impl CoreManager {
         logging!(info, Type::Core, "Starting core in service mode");
         let config_file = Config::generate_file(crate::config::ConfigType::Run).await?;
         service::run_core_by_service(&config_file).await?;
+        update_mihomo_socket_path(service::mihomo_socket_path_by_service()?).await?;
 
         if let Err(error) = wait_for_core_api_ready().await {
             logging!(error, Type::Core, "Service 已接受启动，但 Mihomo API 未就绪: {error:#}");

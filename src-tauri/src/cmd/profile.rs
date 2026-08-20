@@ -159,6 +159,18 @@ pub async fn update_profile(index: String, option: Option<PrfOption>) -> CmdResu
     }
 }
 
+/// 批量更新配置文件，全部下载完成后仅重载一次运行时配置
+#[tauri::command]
+pub async fn update_profiles(indices: Vec<String>) -> CmdResult {
+    match feat::update_profiles(&indices).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            logging!(error, Type::Cmd, "{}", e);
+            Err(e.to_string().into())
+        }
+    }
+}
+
 /// 删除配置文件
 #[tauri::command]
 pub async fn delete_profile(index: String) -> CmdResult {

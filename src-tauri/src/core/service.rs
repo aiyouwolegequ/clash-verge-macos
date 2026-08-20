@@ -14,7 +14,13 @@ use clash_verge_service_ipc::{
 use compact_str::CompactString;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex as ParkingMutex;
-use std::{borrow::Cow, env::current_exe, future::Future, path::Path, time::Duration};
+use std::{
+    borrow::Cow,
+    env::current_exe,
+    future::Future,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tokio::sync::Mutex;
 
 static ACTIVE_SERVICE_SESSION: Lazy<ParkingMutex<Option<ActiveServiceSession>>> = Lazy::new(|| ParkingMutex::new(None));
@@ -53,8 +59,34 @@ pub(crate) fn has_active_service_session() -> bool {
     ACTIVE_SERVICE_SESSION.lock().is_some()
 }
 
+pub(super) fn mihomo_socket_path_by_service() -> Result<String> {
+    let credentials = current_owner_credentials()?;
+    Ok(clash_verge_service_ipc::mihomo_ipc_path(&credentials.identity))
+}
+
 fn clear_active_service_session() {
     ACTIVE_SERVICE_SESSION.lock().take();
+}
+
+fn service_core_path(clash_core: &str) -> Result<PathBuf> {
+    let core_path = current_exe()?.with_file_name(clash_core);
+
+    #[cfg(target_os = "macos")]
+    if is_macos_temporary_app_path(&core_path) {
+        bail!(
+            "macOS Service 不能从临时应用路径启动内核；请将 Clash Verge.app 移动到 /Applications 后重新打开再启用 TUN"
+        );
+    }
+
+    Ok(core_path)
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_temporary_app_path(path: &Path) -> bool {
+    path.starts_with("/Volumes")
+        || path
+            .components()
+            .any(|component| component.as_os_str() == "AppTranslocation")
 }
 
 async fn probe_runtime_staging_support() -> bool {
@@ -278,7 +310,7 @@ pub(super) async fn start_with_existing_service(config_file: &Path) -> Result<()
     let clash_core = verge_config.latest_arc().get_valid_clash_core();
     drop(verge_config);
 
-    let bin_path = current_exe()?.with_file_name(clash_core.as_str());
+    let bin_path = service_core_path(&clash_core)?;
 
     let credentials = current_owner_credentials()?;
     let runtime = collect_runtime_bundle(config_file, &bin_path).await?;
@@ -411,7 +443,7 @@ pub(super) async fn stage_runtime_by_service(config_file: &Path) -> Result<Stage
     let verge_config = Config::verge().await;
     let clash_core = verge_config.latest_arc().get_valid_clash_core();
     drop(verge_config);
-    let core_path = current_exe()?.with_file_name(clash_core.as_str());
+    let core_path = service_core_path(&clash_core)?;
     let runtime = collect_runtime_bundle(config_file, &core_path).await?;
 
     let response = run_service_ipc(
@@ -653,6 +685,8 @@ pub static SERVICE_MANAGER: Lazy<Mutex<ServiceManager>> = Lazy::new(|| Mutex::ne
 #[cfg(test)]
 mod tests {
     use super::{escape_osascript_string, run_service_ipc, shell_quote};
+    #[cfg(target_os = "macos")]
+    use std::path::Path;
     use std::time::Duration;
 
     #[test]
@@ -671,6 +705,20 @@ mod tests {
             escape_osascript_string(r#"sudo '/tmp/A "quoted" \ path'"#),
             r#"sudo '/tmp/A \"quoted\" \\ path'"#
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn detects_temporary_macos_app_paths() {
+        assert!(super::is_macos_temporary_app_path(Path::new(
+            "/Volumes/Clash Verge/Clash Verge.app/Contents/MacOS/verge-mihomo"
+        )));
+        assert!(super::is_macos_temporary_app_path(Path::new(
+            "/private/var/folders/example/T/AppTranslocation/123/d/Clash Verge.app/Contents/MacOS/verge-mihomo"
+        )));
+        assert!(!super::is_macos_temporary_app_path(Path::new(
+            "/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo"
+        )));
     }
 
     #[tokio::test]

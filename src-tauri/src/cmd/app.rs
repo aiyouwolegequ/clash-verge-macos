@@ -23,7 +23,7 @@ pub async fn open_core_dir() -> CmdResult<()> {
 /// 打开日志目录
 #[tauri::command]
 pub async fn open_logs_dir() -> CmdResult<()> {
-    let log_dir = dirs::app_logs_dir().stringify_err()?;
+    let log_dir = dirs::app_logs_root_dir().stringify_err()?;
     open::that(log_dir).stringify_err()
 }
 

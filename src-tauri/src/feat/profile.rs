@@ -6,6 +6,7 @@ use crate::{
 };
 use anyhow::{Result, bail};
 use clash_verge_logging::{Type, logging, logging_error};
+use futures::future::join_all;
 use smartstring::alias::String;
 use tauri::Emitter as _;
 
@@ -197,37 +198,71 @@ pub async fn update_profile(
     let url_opt = should_update_profile(uid, ignore_auto_update).await?;
 
     let should_refresh = match url_opt {
-        Some((url, opt)) => {
-            perform_profile_update(uid, &url, opt.as_ref(), option, is_mannual_trigger).await? && auto_refresh
-        }
-        None => auto_refresh,
+        Some((url, opt)) => perform_profile_update(uid, &url, opt.as_ref(), option, is_mannual_trigger).await?,
+        None => true,
     };
 
-    if should_refresh {
-        logging!(info, Type::Config, "[订阅更新] 更新内核配置");
-        match CoreManager::global().update_config_with_force(is_mannual_trigger).await {
-            Ok(outcome) if outcome.is_valid() => {
-                logging!(info, Type::Config, "[订阅更新] 更新成功");
-                handle::Handle::refresh_clash();
-            }
-            Ok(outcome @ (ValidationOutcome::Skipped { .. } | ValidationOutcome::Busy)) if !is_mannual_trigger => {
-                logging!(info, Type::Config, "[订阅更新] 本次配置刷新已跳过: {}", outcome);
-            }
-            Ok(outcome) => {
-                let message = outcome.to_string();
-                logging!(error, Type::Config, "[订阅更新] 更新失败: {}", message);
-                handle::Handle::notice_message("update_failed", message.clone());
-                bail!(message);
-            }
-            Err(err) => {
-                logging!(error, Type::Config, "[订阅更新] 更新失败: {}", err);
-                handle::Handle::notice_message("update_failed", format!("{err}"));
-                return Err(err);
-            }
+    if auto_refresh && should_refresh {
+        refresh_core_config(is_mannual_trigger).await?;
+    }
+
+    Ok(())
+}
+
+async fn refresh_core_config(is_mannual_trigger: bool) -> Result<()> {
+    logging!(info, Type::Config, "[订阅更新] 更新内核配置");
+    match CoreManager::global().update_config_with_force(is_mannual_trigger).await {
+        Ok(outcome) if outcome.is_valid() => {
+            logging!(info, Type::Config, "[订阅更新] 更新成功");
+            handle::Handle::refresh_clash();
+        }
+        Ok(outcome @ (ValidationOutcome::Skipped { .. } | ValidationOutcome::Busy)) if !is_mannual_trigger => {
+            logging!(info, Type::Config, "[订阅更新] 本次配置刷新已跳过: {}", outcome);
+        }
+        Ok(outcome) => {
+            let message = outcome.to_string();
+            logging!(error, Type::Config, "[订阅更新] 更新失败: {}", message);
+            handle::Handle::notice_message("update_failed", message.clone());
+            bail!(message);
+        }
+        Err(err) => {
+            logging!(error, Type::Config, "[订阅更新] 更新失败: {}", err);
+            handle::Handle::notice_message("update_failed", format!("{err}"));
+            return Err(err);
         }
     }
 
     Ok(())
+}
+
+pub async fn update_profiles(indices: &[String]) -> Result<()> {
+    logging!(info, Type::Config, "[订阅更新] 批量更新 {} 个订阅", indices.len());
+
+    let current_profile = Config::profiles().await.latest_arc().current.clone();
+
+    let results = join_all(indices.iter().map(|uid| update_profile(uid, None, false, true, true))).await;
+
+    let errors = results
+        .iter()
+        .enumerate()
+        .filter_map(|(index, result)| result.as_ref().err().map(|err| format!("{}: {err}", indices[index])))
+        .collect::<Vec<_>>();
+
+    let current_profile_updated = indices
+        .iter()
+        .zip(&results)
+        .any(|(uid, result)| current_profile.as_ref() == Some(uid) && result.is_ok());
+
+    if current_profile_updated {
+        logging!(info, Type::Config, "[订阅更新] 下载已完成，统一更新内核配置");
+        refresh_core_config(true).await?;
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        bail!("{} 个订阅更新失败: {}", errors.len(), errors.join("; "))
+    }
 }
 
 /// 增强配置
