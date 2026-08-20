@@ -1,6 +1,8 @@
 use crate::{
     config::Config,
-    core::{owner_identity::current_owner_credentials, runtime_bundle::collect_runtime_bundle, tray::Tray},
+    core::{
+        logger::Logger, owner_identity::current_owner_credentials, runtime_bundle::collect_runtime_bundle, tray::Tray,
+    },
     utils::dirs,
 };
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -45,6 +47,10 @@ pub(crate) fn active_service_supports_runtime_staging() -> bool {
         .lock()
         .as_ref()
         .is_some_and(|session| session.supports_runtime_staging)
+}
+
+pub(crate) fn has_active_service_session() -> bool {
+    ACTIVE_SERVICE_SESSION.lock().is_some()
 }
 
 fn clear_active_service_session() {
@@ -302,8 +308,23 @@ pub(super) async fn start_with_existing_service(config_file: &Path) -> Result<()
             generation: result.session.generation,
             token: proposed_session_token,
         },
-        supports_runtime_staging: probe_runtime_staging_support().await,
+        supports_runtime_staging: false,
     });
+
+    match Logger::global().service_writer_config() {
+        Ok(writer) => {
+            if let Err(error) = update_writer_by_service(&writer).await {
+                logging!(warn, Type::Service, "启动后配置 Service 核心日志失败: {error:#}");
+            }
+        }
+        Err(error) => logging!(warn, Type::Service, "创建 Service 核心日志配置失败: {error:#}"),
+    }
+
+    let supports_runtime_staging = probe_runtime_staging_support().await;
+    if let Some(session) = ACTIVE_SERVICE_SESSION.lock().as_mut() {
+        session.supports_runtime_staging = supports_runtime_staging;
+    }
+
     logging!(info, Type::Service, "服务成功启动核心，已建立所有权会话");
     Ok(())
 }

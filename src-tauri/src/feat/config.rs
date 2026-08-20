@@ -9,11 +9,14 @@ use clash_verge_draft::SharedDraft;
 use clash_verge_logging::{Type, logging, logging_error};
 use serde_yaml_ng::Mapping;
 
+static CONFIG_PATCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Patch Clash configuration
 pub async fn patch_clash(patch: &Mapping) -> Result<()> {
+    let _patch_guard = CONFIG_PATCH_LOCK.lock().await;
     Config::clash().await.edit_draft(|d| d.patch_config(patch));
 
-    let res = {
+    let res: Result<()> = async {
         // 激活订阅
         if patch.get("secret").is_some() || patch.get("external-controller").is_some() {
             Config::generate().await?;
@@ -26,8 +29,9 @@ pub async fn patch_clash(patch: &Mapping) -> Result<()> {
             CoreManager::global().update_config_checked().await?;
         }
         handle::Handle::refresh_clash();
-        <Result<()>>::Ok(())
-    };
+        Ok(())
+    }
+    .await;
     match res {
         Ok(()) => {
             Config::clash().await.apply();
@@ -240,14 +244,12 @@ async fn process_terminated_flags(update_flags: UpdateFlags, patch: &IVerge) -> 
 }
 
 pub async fn patch_verge(patch: &IVerge, not_save_file: bool) -> Result<()> {
+    let _patch_guard = CONFIG_PATCH_LOCK.lock().await;
     Config::verge().await.edit_draft(|d| d.patch_config(patch));
 
     let update_flags = determine_update_flags(patch);
     logging!(debug, Type::Setup, "Determined update flags: {:?}", update_flags);
-    let process_flag_result: std::result::Result<(), anyhow::Error> = {
-        process_terminated_flags(update_flags, patch).await?;
-        Ok(())
-    };
+    let process_flag_result = process_terminated_flags(update_flags, patch).await;
 
     if let Err(err) = process_flag_result {
         Config::verge().await.discard();

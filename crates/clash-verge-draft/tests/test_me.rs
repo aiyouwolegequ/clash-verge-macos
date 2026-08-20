@@ -260,4 +260,32 @@ mod tests {
         assert_eq!(latest.enable_auto_launch, Some(false));
         assert_eq!(latest.enable_tun_mode, Some(false));
     }
+
+    #[tokio::test]
+    async fn concurrent_async_modifications_preserve_both_changes() {
+        let draft = Draft::new(IVerge {
+            enable_auto_launch: Some(false),
+            enable_tun_mode: Some(false),
+        });
+        let first = draft.clone();
+        let second = draft.clone();
+
+        let first_update = first.with_data_modify(|mut value| async move {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            value.enable_auto_launch = Some(true);
+            Ok((value, ()))
+        });
+        let second_update = second.with_data_modify(|mut value| async move {
+            value.enable_tun_mode = Some(true);
+            Ok((value, ()))
+        });
+
+        let (first_result, second_result) = tokio::join!(first_update, second_update);
+        assert!(first_result.is_ok());
+        assert!(second_result.is_ok());
+
+        let committed = draft.data_arc();
+        assert_eq!(committed.enable_auto_launch, Some(true));
+        assert_eq!(committed.enable_tun_mode, Some(true));
+    }
 }

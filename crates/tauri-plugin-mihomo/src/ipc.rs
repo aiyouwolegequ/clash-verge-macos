@@ -1,13 +1,11 @@
 use std::{
-    ops::{Deref, DerefMut},
     pin::Pin,
     sync::{Arc, OnceLock},
     task::{Context, Poll},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use bytes::Bytes;
-use crossbeam::queue::SegQueue;
 use http_body_util::{BodyExt, Full};
 use hyper::{
     client::conn::http1,
@@ -254,15 +252,15 @@ pub async fn connect_to_socket(socket_path: &str) -> Result<WrapStream> {
 // 连接池配置
 #[derive(Debug, Clone)]
 pub struct IpcPoolConfig {
-    /// 最小连接数, 默认 `3`
+    /// 保留用于 API 兼容；原始 HTTP/1 socket 不可安全复用。
     pub min_connections: usize,
     /// 最大连接数, 默认 `10`
     pub max_connections: usize,
-    /// 空闲超时时间, 默认 `60s`
+    /// 保留用于 API 兼容；当前实现不保留空闲原始 socket。
     pub idle_timeout: Duration,
-    /// 健康检查间隔, 默认 `60s`
+    /// 保留用于 API 兼容；当前实现不保留空闲原始 socket。
     pub health_check_interval: Duration,
-    /// 拒绝策略, 默认 `New` （无需等待连接池可用，直接创建新的 IPC 连接）
+    /// 达到并发上限时的策略，默认 `Wait`。
     pub reject_policy: RejectPolicy,
 }
 
@@ -273,7 +271,7 @@ impl Default for IpcPoolConfig {
             max_connections: 20,
             idle_timeout: Duration::from_secs(60),
             health_check_interval: Duration::from_secs(60),
-            reject_policy: RejectPolicy::New,
+            reject_policy: RejectPolicy::Wait,
         }
     }
 }
@@ -293,7 +291,7 @@ impl Default for IpcPoolConfigBuilder {
             max_connections: 20,
             idle_timeout: Duration::from_secs(60),
             health_check_interval: Duration::from_secs(60),
-            reject_policy: RejectPolicy::New,
+            reject_policy: RejectPolicy::Wait,
         }
     }
 }
@@ -331,7 +329,7 @@ impl IpcPoolConfigBuilder {
     pub fn build(self) -> IpcPoolConfig {
         IpcPoolConfig {
             min_connections: self.min_connections,
-            max_connections: self.max_connections,
+            max_connections: self.max_connections.max(1),
             idle_timeout: self.idle_timeout,
             health_check_interval: self.health_check_interval,
             reject_policy: self.reject_policy,
@@ -342,54 +340,19 @@ impl IpcPoolConfigBuilder {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub enum RejectPolicy {
-    #[default]
-    New, // 无需等待连接池的连接可用，直接创建新的 IPC 连接
+    // 兼容旧配置；原始 socket 不可复用，因此达到上限后的行为等同 Wait。
+    New,
     Reject,            // 连接池的连接不可用时，直接拒绝
     Timeout(Duration), // 等待连接池的连接可用的超时时间
-    Wait,              // 一直等待连接池的连接可用
+    #[default]
+    Wait, // 一直等待连接池的连接可用
 }
 
-// IPC 连接包装器
-struct IpcConnection {
-    stream: WrapStream,
-    last_used: Instant,
-}
-
-impl Deref for IpcConnection {
-    type Target = WrapStream;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.stream
-    }
-}
-
-impl DerefMut for IpcConnection {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.stream
-    }
-}
-
-impl IpcConnection {
-    #[inline]
-    fn new(stream: WrapStream) -> Self {
-        Self {
-            stream,
-            last_used: Instant::now(),
-        }
-    }
-
-    #[inline]
-    fn is_valid(&self) -> bool {
-        self.stream.is_available().unwrap_or_default()
-    }
-}
-
-// IPC 连接池
+// HTTP/1 handshake takes ownership of a local socket, so raw streams cannot be
+// returned safely after a request. This type therefore provides bounded IPC
+// concurrency rather than pretending to reuse consumed streams.
 #[derive(Clone)]
 pub struct IpcConnectionPool {
-    connections: Arc<SegQueue<IpcConnection>>,
     semaphore: Arc<Semaphore>,
     config: IpcPoolConfig,
 }
@@ -399,14 +362,10 @@ static CONNECTION_POOL: OnceLock<IpcConnectionPool> = OnceLock::new();
 impl IpcConnectionPool {
     #[inline]
     fn new(config: IpcPoolConfig) -> Self {
-        let pool = IpcConnectionPool {
+        IpcConnectionPool {
             semaphore: Arc::new(Semaphore::new(config.max_connections)),
             config,
-            connections: Arc::new(SegQueue::new()),
-        };
-        // 启动清理空闲连接的任务线程
-        pool.start_clear_idle_conns_task();
-        pool
+        }
     }
 
     /// 初始化全局实例
@@ -422,54 +381,11 @@ impl IpcConnectionPool {
         CONNECTION_POOL.get().ok_or(Error::ConnectionPoolNotInitialized)
     }
 
-    /// 启动清理空闲连接的任务线程
     #[inline]
-    fn start_clear_idle_conns_task(&self) {
-        let pool = self.clone();
-
-        tauri::async_runtime::spawn(async move {
-            let mut interval = tokio::time::interval(pool.config.health_check_interval);
-            loop {
-                interval.tick().await;
-                pool.cleanup_idle_connections();
-            }
-        });
-    }
-
-    // 清理空闲连接
-    #[inline]
-    fn cleanup_idle_connections(&self) {
-        let now = Instant::now();
-        let min_to_keep = self.config.min_connections;
-
-        let mut total_checked = 0;
-        let mut kept = 0;
-
-        let approx_len = self.connections.len();
-
-        for _ in 0..approx_len {
-            if let Some(conn) = self.connections.pop() {
-                total_checked += 1;
-                let is_idle_timeout = now.duration_since(conn.last_used) > self.config.idle_timeout;
-
-                if kept < min_to_keep || !is_idle_timeout {
-                    self.connections.push(conn);
-                    kept += 1;
-                }
-            } else {
-                break;
-            }
-        }
-        log::debug!("Cleanup done: checked {}, kept {}", total_checked, kept);
-    }
-
-    #[inline]
-    async fn get_connection<'a>(&'a self, socket_path: &str) -> Result<(IpcConnection, SemaphorePermit<'a>)> {
-        log::debug!("get connection from pool");
-        // 确保获取 semaphore permit
+    async fn get_connection<'a>(&'a self, socket_path: &str) -> Result<(WrapStream, SemaphorePermit<'a>)> {
+        log::debug!("acquire bounded IPC connection");
         let permit = self.acquire_permit().await?;
-        // 开始创建连接
-        let conn = self.acquire_or_create_connection(socket_path).await?;
+        let conn = self.create_connection(socket_path).await?;
         Ok((conn, permit))
     }
 
@@ -479,16 +395,8 @@ impl IpcConnectionPool {
             Ok(permit) => Ok(permit),
             Err(_) => match self.config.reject_policy {
                 RejectPolicy::New => {
-                    log::debug!("max permit has acquire, add permit");
-                    self.semaphore.add_permits(1);
-                    match self.semaphore.acquire().await {
-                        Ok(permit) => Ok(permit),
-                        Err(e) => {
-                            log::error!("failed to acquire permit, forget permit");
-                            self.semaphore.forget_permits(1);
-                            Err(Error::ConnectionFailed(e.to_string()))
-                        }
-                    }
+                    log::debug!("IPC concurrency limit reached; waiting for a permit");
+                    self.semaphore.acquire().await.map_err(|_| Error::ConnectionPoolFull)
                 }
                 RejectPolicy::Reject => Err(Error::ConnectionPoolFull),
                 RejectPolicy::Timeout(timeout_duration) => {
@@ -510,41 +418,19 @@ impl IpcConnectionPool {
         }
     }
 
-    async fn acquire_or_create_connection(&self, socket_path: &str) -> Result<IpcConnection> {
-        // 从池中获取连接并检查其有效性
-        while let Some(conn) = self.connections.pop() {
-            log::debug!("Attempting to reuse connection from pool");
-            if conn.is_valid() {
-                return Ok(conn);
-            }
-            // log::debug!("Pooled connection is invalid, dropping...");
-        }
-
-        log::trace!("Pool empty, creating new connection");
-        Self::create_connection(socket_path).await
-    }
-
-    async fn create_connection(socket_path: &str) -> Result<IpcConnection> {
+    async fn create_connection(&self, socket_path: &str) -> Result<WrapStream> {
         log::trace!(
             "creating connection, available permits: {}",
-            Self::global()?.semaphore.available_permits()
+            self.semaphore.available_permits()
         );
         match connect_to_socket(socket_path).await {
-            Ok(stream) => Ok(IpcConnection::new(stream)),
+            Ok(stream) => Ok(stream),
             Err(e) => Err(Error::ConnectionFailed(e.to_string())),
         }
     }
 
     pub fn clear_pool(&self) {
-        while self.connections.pop().is_some() {}
-        log::debug!("IpcConnectionPool cleared");
-    }
-}
-
-impl Drop for IpcConnectionPool {
-    fn drop(&mut self) {
-        log::debug!("IpcConnectionPool is being dropped");
-        self.clear_pool();
+        log::debug!("IPC concurrency gate has no reusable raw connections to clear");
     }
 }
 
@@ -578,7 +464,7 @@ impl LocalSocket for RequestBuilder {
         let hyper_req = builder.body(Full::new(body_bytes))?;
 
         let process = async move {
-            let (mut sender, conn_driver) = http1::handshake(conn.stream)
+            let (mut sender, conn_driver) = http1::handshake(conn)
                 .await
                 .map_err(|e| Error::HttpParseError(e.to_string()))?;
 
@@ -609,5 +495,33 @@ impl LocalSocket for RequestBuilder {
             Some(d) => timeout(*d, process).await?,
             None => process.await,
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::{IpcConnectionPool, IpcPoolConfigBuilder, RejectPolicy};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn new_policy_does_not_expand_the_configured_limit() {
+        let pool = IpcConnectionPool::new(
+            IpcPoolConfigBuilder::new()
+                .max_connections(1)
+                .reject_policy(RejectPolicy::New)
+                .build(),
+        );
+        let first = pool.acquire_permit().await.expect("first permit should be available");
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), pool.acquire_permit())
+                .await
+                .is_err()
+        );
+        assert_eq!(pool.semaphore.available_permits(), 0);
+
+        drop(first);
+        assert!(pool.acquire_permit().await.is_ok());
     }
 }

@@ -41,6 +41,11 @@ impl CoreManager {
     }
 
     pub async fn update_config_with_force(&self, force: bool) -> Result<ValidationOutcome> {
+        let _operation = self.operation_lock.lock().await;
+        self.update_config_with_force_unlocked(force).await
+    }
+
+    async fn update_config_with_force_unlocked(&self, force: bool) -> Result<ValidationOutcome> {
         if handle::Handle::global().is_exiting() {
             return Ok(ValidationOutcome::Skipped {
                 reason: ValidationSkipReason::Exiting,
@@ -91,11 +96,17 @@ impl CoreManager {
             return Ok(ValidationOutcome::invalid_from_message(message));
         }
 
-        self.apply_generate_config().await
+        self.apply_generate_config_unlocked().await
     }
 
     #[allow(clippy::cognitive_complexity)]
     pub async fn apply_generate_config(&self) -> Result<ValidationOutcome> {
+        let _operation = self.operation_lock.lock().await;
+        self.apply_generate_config_unlocked().await
+    }
+
+    #[allow(clippy::cognitive_complexity)]
+    async fn apply_generate_config_unlocked(&self) -> Result<ValidationOutcome> {
         use crate::constants::files::RUNTIME_CONFIG;
 
         let run_path = dirs::app_home_dir()?.join(RUNTIME_CONFIG);
@@ -202,7 +213,7 @@ impl CoreManager {
                             Type::Core,
                             "Configuration is valid. Attempting core restart to apply configuration..."
                         );
-                        match self.restart_core().await {
+                        match self.restart_core_unlocked().await {
                             Ok(_) => {
                                 Config::runtime().await.apply();
                                 logging!(info, Type::Core, "Configuration applied after core restart");

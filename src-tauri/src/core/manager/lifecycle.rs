@@ -23,8 +23,17 @@ const fn should_probe_existing_service(status: &ServiceStatus) -> bool {
     matches!(status, ServiceStatus::Checking)
 }
 
+const fn can_fallback_to_sidecar(needs_tun: bool, is_admin: bool) -> bool {
+    !needs_tun || is_admin
+}
+
 impl CoreManager {
     pub async fn start_core(&self) -> Result<()> {
+        let _operation = self.operation_lock.lock().await;
+        self.start_core_unlocked().await
+    }
+
+    pub(super) async fn start_core_unlocked(&self) -> Result<()> {
         self.prepare_startup().await?;
         defer! {
             self.after_core_process();
@@ -34,7 +43,22 @@ impl CoreManager {
             RunningMode::Service => match self.start_core_by_service().await {
                 Ok(()) => Ok(()),
                 Err(e) => {
-                    logging!(warn, Type::Core, "Service mode failed ({}), falling back to sidecar", e);
+                    logging!(warn, Type::Core, "Service mode failed: {}", e);
+                    if service::has_active_service_session() {
+                        return Err(e.context("Service 核心会话仍处于活动状态；为避免双核心冲突，已停止自动回退"));
+                    }
+                    if Handle::mihomo().await.get_version().await.is_ok() {
+                        return Err(e.context("Mihomo API 仍可访问但 Service 会话状态未知；已停止自动回退"));
+                    }
+                    let needs_tun = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
+                    let is_admin = tauri_plugin_clash_verge_sysinfo::is_current_app_handle_admin(Handle::app_handle());
+                    if !can_fallback_to_sidecar(needs_tun, is_admin) {
+                        self.set_running_mode(RunningMode::NotRunning);
+                        return Err(
+                            e.context("TUN 模式要求可用的 macOS Service；为避免无权限 Sidecar 假启动，已停止自动回退")
+                        );
+                    }
+                    logging!(warn, Type::Core, "Falling back to sidecar mode");
                     self.set_running_mode(RunningMode::Sidecar);
                     self.start_core_by_sidecar().await
                 }
@@ -44,6 +68,11 @@ impl CoreManager {
     }
 
     pub async fn stop_core(&self) -> Result<()> {
+        let _operation = self.operation_lock.lock().await;
+        self.stop_core_unlocked().await
+    }
+
+    pub(super) async fn stop_core_unlocked(&self) -> Result<()> {
         CLASH_LOGGER.clear_logs().await;
         defer! {
             self.after_core_process();
@@ -51,18 +80,20 @@ impl CoreManager {
 
         match *self.get_running_mode() {
             RunningMode::Service => self.stop_core_by_service().await,
-            RunningMode::Sidecar => {
-                self.stop_core_by_sidecar();
-                Ok(())
-            }
+            RunningMode::Sidecar => self.stop_core_by_sidecar().await,
             RunningMode::NotRunning => Ok(()),
         }
     }
 
     pub async fn restart_core(&self) -> Result<()> {
+        let _operation = self.operation_lock.lock().await;
+        self.restart_core_unlocked().await
+    }
+
+    pub(super) async fn restart_core_unlocked(&self) -> Result<()> {
         logging!(info, Type::Core, "Restarting core");
-        self.stop_core().await?;
-        self.start_core().await
+        self.stop_core_unlocked().await?;
+        self.start_core_unlocked().await
     }
 
     pub async fn change_core(&self, clash_core: &String) -> Result<(), String> {
@@ -183,5 +214,12 @@ mod tests {
         assert!(!should_probe_existing_service(&ServiceStatus::Unavailable(
             "connection refused".into()
         )));
+    }
+
+    #[test]
+    fn non_admin_tun_never_falls_back_to_sidecar() {
+        assert!(!can_fallback_to_sidecar(true, false));
+        assert!(can_fallback_to_sidecar(false, false));
+        assert!(can_fallback_to_sidecar(true, true));
     }
 }

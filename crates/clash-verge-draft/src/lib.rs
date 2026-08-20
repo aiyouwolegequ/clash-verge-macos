@@ -9,6 +9,7 @@ type DraftInner<T> = (SharedDraft<T>, Option<SharedDraft<T>>);
 #[derive(Debug)]
 pub struct Draft<T> {
     inner: Arc<RwLock<DraftInner<T>>>,
+    async_modify_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<T: Clone> Draft<T> {
@@ -16,6 +17,7 @@ impl<T: Clone> Draft<T> {
     pub fn new(data: T) -> Self {
         Self {
             inner: Arc::new(RwLock::new((Arc::new(data), None))),
+            async_modify_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
     /// 以 Arc<Box<T>> 的形式获取当前“已提交（正式）”数据的快照（零拷贝，仅 clone Arc）
@@ -73,6 +75,7 @@ impl<T: Clone> Draft<T> {
         F: FnOnce(T) -> Fut + Send,
         Fut: std::future::Future<Output = Result<(T, R), anyhow::Error>> + Send,
     {
+        let _modify_guard = self.async_modify_lock.lock().await;
         let local = {
             let guard = self.inner.read();
             (*guard.0).clone()
@@ -88,6 +91,7 @@ impl<T: Clone> Clone for Draft<T> {
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
+            async_modify_lock: Arc::clone(&self.async_modify_lock),
         }
     }
 }
