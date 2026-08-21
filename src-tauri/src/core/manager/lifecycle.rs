@@ -92,7 +92,22 @@ impl CoreManager {
 
     pub(super) async fn restart_core_unlocked(&self) -> Result<()> {
         logging!(info, Type::Core, "Restarting core");
-        self.stop_core_unlocked().await?;
+        if let Err(error) = self.stop_core_unlocked().await {
+            if !service::is_stale_owner_session_error(&error) {
+                return Err(error);
+            }
+
+            // The Service has already replaced or restarted its owner session.  Starting through
+            // the Service is a transactional takeover: it stops the old core before creating the
+            // replacement, so it is safe to reacquire ownership instead of leaving TUN offline.
+            logging!(
+                warn,
+                Type::Service,
+                "Service owner session is stale during restart; reacquiring the session"
+            );
+            service::clear_active_service_session();
+            return self.start_core_unlocked().await;
+        }
         self.start_core_unlocked().await
     }
 

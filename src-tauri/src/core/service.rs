@@ -64,8 +64,14 @@ pub(super) fn mihomo_socket_path_by_service() -> Result<String> {
     Ok(clash_verge_service_ipc::mihomo_ipc_path(&credentials.identity))
 }
 
-fn clear_active_service_session() {
+pub(super) fn clear_active_service_session() {
     ACTIVE_SERVICE_SESSION.lock().take();
+}
+
+pub(super) fn is_stale_owner_session_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("owner session is stale or invalid"))
 }
 
 fn service_core_path(clash_core: &str) -> Result<PathBuf> {

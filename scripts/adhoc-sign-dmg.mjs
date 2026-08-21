@@ -57,6 +57,23 @@ const rwPath = `${rwStem}.dmg`
 const signedPath = `${signedStem}.dmg`
 let attached = false
 
+const serviceExecutables = [
+  'clash-verge-service',
+  'clash-verge-service-install',
+  'clash-verge-service-uninstall',
+]
+
+const signServiceExecutables = async (appPath) => {
+  const resourcesDir = path.join(appPath, 'Contents', 'Resources', 'resources')
+
+  for (const name of serviceExecutables) {
+    const executable = path.join(resourcesDir, name)
+    await access(executable)
+    await run('codesign', ['--force', '--sign', '-', executable])
+    await run('codesign', ['--verify', '--strict', executable])
+  }
+}
+
 try {
   await run('hdiutil', ['convert', dmgPath, '-format', 'UDRW', '-o', rwStem])
   await run('hdiutil', [
@@ -72,6 +89,7 @@ try {
   const appPath = path.join(mountDir, 'Clash Verge.app')
   await access(appPath)
   await run('ditto', [appPath, localAppPath])
+  await signServiceExecutables(localAppPath)
   await run('codesign', ['--force', '--deep', '--sign', '-', localAppPath])
   await run('codesign', ['--verify', '--deep', '--strict', localAppPath])
   await rm(appPath, { recursive: true, force: true })
