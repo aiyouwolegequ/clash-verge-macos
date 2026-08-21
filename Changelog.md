@@ -1,3 +1,25 @@
+## v2.9.4
+
+> [!IMPORTANT]
+> 本版本修复 macOS Service Helper 的无效签名，并在 Service 所有权会话失效时安全恢复核心，避免切换订阅后 TUN 长时间离线。
+
+### 🐞 修复问题
+
+- **Service Helper 签名**：DMG 打包前显式 ad-hoc 签名并严格验证 `clash-verge-service`、安装器和卸载器；避免 Helper 被安装后遭 macOS 以无效签名终止。
+- **过期 Service 会话恢复**：配置重启遇到 `owner session is stale or invalid` 时，清除旧会话并由 Service 执行事务性接管，重新获得核心所有权；其他 IPC 错误仍按原路径返回，避免不安全重试。
+
+### 🚀 更新
+
+- **发布资源**：Stable Mihomo 为 `v1.19.30`，Alpha Mihomo 更新至 `alpha-c0e43eb`，clash-verge-service 为 `v2.6.1`；已执行 `pnpm prebuild --force` 刷新 GeoData。
+
+### ✅ 验证
+
+- 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
+- 完成 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm prebuild` 与 `pnpm build`。
+- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.9.4_aarch64.dmg`，并通过 `hdiutil verify` 与镜像内应用及三个 Service Helper 的 `codesign --verify --strict` 校验（69,039,038 bytes），SHA256：`fe02fc2bf8b61d584737b13ed86217e47c00f7e416a553f05f57f7ef79d50eb8`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.9.4_aarch64.dmg`。
+
+---
+
 ## v2.9.3
 
 > [!IMPORTANT]
