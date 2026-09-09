@@ -211,13 +211,16 @@ impl Mihomo {
                             log::debug!("connection [{id}] is removed from manager");
                             break;
                         }
-                        if let Some(message) = reader.next().await {
-                            if let Ok(Message::Close(_)) = message {
-                                log::debug!("connection [{id}] is closed");
-                                manager_.0.write().await.remove(&id);
-                            }
-                            let response = handle_message(message);
-                            on_message(response);
+                        let Some(message) = reader.next().await else {
+                            manager_.0.write().await.remove(&id);
+                            on_message(serde_json::to_value(WebSocketMessage::Close(None)).unwrap_or_default());
+                            break;
+                        };
+                        let closed = matches!(&message, Ok(Message::Close(_)) | Err(_));
+                        on_message(handle_message(message));
+                        if closed {
+                            manager_.0.write().await.remove(&id);
+                            break;
                         }
                     }
                 });
@@ -255,13 +258,16 @@ impl Mihomo {
                                 log::debug!("connection [{id}] is removed from manager");
                                 break;
                             }
-                            if let Some(message) = reader.next().await {
-                                if let Ok(Message::Close(_)) = message {
-                                    log::debug!("connection [{id}] closed");
-                                    manager_.0.write().await.remove(&id);
-                                }
-                                let response = handle_message(message);
-                                on_message(response);
+                            let Some(message) = reader.next().await else {
+                                manager_.0.write().await.remove(&id);
+                                on_message(serde_json::to_value(WebSocketMessage::Close(None)).unwrap_or_default());
+                                break;
+                            };
+                            let closed = matches!(&message, Ok(Message::Close(_)) | Err(_));
+                            on_message(handle_message(message));
+                            if closed {
+                                manager_.0.write().await.remove(&id);
+                                break;
                             }
                         }
                     });
@@ -885,5 +891,108 @@ impl Mihomo {
             ret_failed_resp!("{}", err_msg);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod websocket_tests {
+    use super::*;
+    use futures_util::SinkExt as _;
+    use tokio::{
+        io::{AsyncRead, AsyncWrite},
+        sync::mpsc,
+        time::timeout,
+    };
+
+    async fn send_log_and_drop<S: AsyncRead + AsyncWrite + Unpin>(stream: S) {
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        ws.send(Message::Text(
+            json!({"type": "warning", "payload": "no route to host"})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+        // Simulate a core crash: no WebSocket close handshake.
+    }
+
+    async fn verify_reconnection(mihomo: &Mihomo) {
+        for _ in 0..2 {
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let id = mihomo
+                .ws_logs(LogLevel::DEBUG, move |data| {
+                    let _ = tx.send(data);
+                })
+                .await
+                .unwrap();
+            let messages = timeout(Duration::from_secs(3), async {
+                let mut messages = Vec::new();
+                while let Some(data) = rx.recv().await {
+                    messages.push(data);
+                }
+                messages
+            })
+            .await
+            .expect("closed streams must release their callback instead of spinning on EOF");
+            assert!(
+                messages
+                    .iter()
+                    .any(|data| data.to_string().contains("no route to host"))
+            );
+            assert!(
+                messages.len() >= 2,
+                "the consumer must receive the log and a terminal event"
+            );
+            assert!(!mihomo.connection_manager.0.read().await.contains_key(&id));
+        }
+    }
+
+    #[tokio::test]
+    async fn tcp_core_disconnect_releases_subscription_and_allows_reconnection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            for _ in 0..2 {
+                send_log_and_drop(listener.accept().await.unwrap().0).await;
+            }
+        });
+        let mihomo = Mihomo {
+            protocol: Protocol::Http,
+            external_host: Some("127.0.0.1".into()),
+            external_port: Some(port),
+            secret: None,
+            socket_path: None,
+            connection_manager: Arc::new(Default::default()),
+        };
+        verify_reconnection(&mihomo).await;
+        server.await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn socket_core_disconnect_releases_subscription_and_allows_reconnection() {
+        let socket = std::env::temp_dir().join(format!(
+            "verge-log-test-{}-{}.sock",
+            std::process::id(),
+            rand::random::<u32>()
+        ));
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let server = tokio::spawn(async move {
+            for _ in 0..2 {
+                send_log_and_drop(listener.accept().await.unwrap().0).await;
+            }
+        });
+        let mihomo = Mihomo {
+            protocol: Protocol::LocalSocket,
+            external_host: None,
+            external_port: None,
+            secret: None,
+            socket_path: Some(socket.to_string_lossy().into_owned()),
+            connection_manager: Arc::new(Default::default()),
+        };
+        verify_reconnection(&mihomo).await;
+        server.await.unwrap();
+        std::fs::remove_file(socket).unwrap();
     }
 }
