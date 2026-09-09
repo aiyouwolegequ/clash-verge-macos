@@ -277,6 +277,7 @@ impl CoreManager {
         let config_file = Config::generate_file(crate::config::ConfigType::Run).await?;
         service::run_core_by_service(&config_file).await?;
         update_mihomo_socket_path(service::mihomo_socket_path_by_service()?).await?;
+        crate::core::service_logs::start();
 
         if let Err(error) = wait_for_core_api_ready().await {
             logging!(error, Type::Core, "Service 已接受启动，但 Mihomo API 未就绪: {error:#}");

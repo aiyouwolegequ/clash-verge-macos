@@ -26,6 +26,7 @@ use crate::{
 pub struct Logger {
     handle: Arc<Mutex<Option<LoggerHandle>>>,
     sidecar_file_writer: Arc<RwLock<Option<FileLogWriter>>>,
+    service_file_writer: RwLock<Option<FileLogWriter>>,
     log_level: Arc<RwLock<LevelFilter>>,
     log_max_size: AtomicU64,
     log_max_count: AtomicUsize,
@@ -36,6 +37,7 @@ impl Default for Logger {
         Self {
             handle: Arc::new(Mutex::new(None)),
             sidecar_file_writer: Arc::new(RwLock::new(None)),
+            service_file_writer: RwLock::new(None),
             log_level: Arc::new(RwLock::new(LevelFilter::Info)),
             log_max_size: AtomicU64::new(128),
             log_max_count: AtomicUsize::new(8),
@@ -99,6 +101,7 @@ impl Logger {
 
         let sidecar_file_writer = self.generate_sidecar_writer()?;
         *self.sidecar_file_writer.write() = Some(sidecar_file_writer);
+        *self.service_file_writer.write() = Some(self.generate_core_writer(service_log_dir()?, "service")?);
 
         std::panic::set_hook(Box::new(move |info| {
             let payload = info
@@ -174,6 +177,7 @@ impl Logger {
         };
         let sidecar_writer = self.generate_sidecar_writer()?;
         *self.sidecar_file_writer.write() = Some(sidecar_writer);
+        *self.service_file_writer.write() = Some(self.generate_core_writer(service_log_dir()?, "service")?);
 
         // A writer update is scoped to the active service-owned Core session.
         if matches!(*CoreManager::global().get_running_mode(), RunningMode::Service) {
@@ -187,13 +191,16 @@ impl Logger {
     }
 
     fn generate_sidecar_writer(&self) -> Result<FileLogWriter> {
-        let sidecar_log_dir = sidecar_log_dir()?;
+        self.generate_core_writer(sidecar_log_dir()?, "sidecar")
+    }
+
+    fn generate_core_writer(&self, directory: std::path::PathBuf, basename: &str) -> Result<FileLogWriter> {
         let log_max_size = self.log_max_size.load(Ordering::SeqCst);
         let log_max_count = self.log_max_count.load(Ordering::SeqCst);
         Ok(FileLogWriter::builder(
             FileSpec::default()
-                .directory(sidecar_log_dir)
-                .basename("sidecar")
+                .directory(directory)
+                .basename(basename)
                 .suppress_timestamp(),
         )
         .format(clash_verge_logger::file_format_without_level)
@@ -219,6 +226,22 @@ impl Logger {
         }
     }
 
+    pub(super) fn write_service_log(&self, message: &str) -> Result<()> {
+        let guard = self.service_file_writer.read();
+        let writer = guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("service log writer is not initialized"))?;
+        writer.write(
+            &mut DeferredNow::default(),
+            &Record::builder()
+                .args(format_args!("{message}"))
+                .level(Level::Info)
+                .build(),
+        )?;
+        drop(guard);
+        Ok(())
+    }
+
     pub fn service_writer_config(&self) -> Result<WriterConfig> {
         let service_log_dir = dirs::path_to_str(&service_log_dir()?)?.into();
         let log_max_size = self.log_max_size.load(Ordering::SeqCst);
@@ -230,5 +253,53 @@ impl Logger {
         };
 
         Ok(writer_config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn service_logs_persist_rotate_and_survive_writer_recreation() -> Result<()> {
+        let directory = std::env::temp_dir().join(format!(
+            "verge-service-logs-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        scopeguard::defer! { let _ = std::fs::remove_dir_all(&directory); }
+        let logger = Logger::default();
+        *logger.log_level.write() = LevelFilter::Error;
+        logger.log_max_size.store(1, Ordering::SeqCst);
+        logger.log_max_count.store(2, Ordering::SeqCst);
+        *logger.service_file_writer.write() = Some(logger.generate_core_writer(directory.clone(), "service")?);
+
+        // Core warnings must persist even when the application log filter is Error.
+        let warning = "level=warning msg=\"[TCP] no route to host\"";
+        logger.write_service_log(warning)?;
+        let latest = directory.join("service_latest.log");
+        assert!(std::fs::read_to_string(&latest)?.contains(warning));
+
+        for index in 0..20 {
+            logger.write_service_log(&format!("record-{index} {}", "x".repeat(700)))?;
+        }
+        logger.service_file_writer.write().take();
+        let logs: Vec<_> = std::fs::read_dir(&directory)?.collect::<std::io::Result<Vec<_>>>()?;
+        assert!(logs.len() > 1, "core logs must rotate");
+        assert!(logs.len() <= 3, "keep at most two archives plus the current log");
+        assert!(std::fs::read_to_string(&latest)?.contains("record-19"));
+
+        *logger.service_file_writer.write() = Some(logger.generate_core_writer(directory.clone(), "service")?);
+        logger.write_service_log("after restart")?;
+        logger.service_file_writer.write().take();
+        let all_logs = std::fs::read_dir(&directory)?
+            .map(|entry| std::fs::read_to_string(entry?.path()))
+            .collect::<std::io::Result<Vec<_>>>()?
+            .join("\n");
+        assert!(all_logs.contains("record-19"));
+        assert!(all_logs.contains("after restart"));
+        Ok(())
     }
 }

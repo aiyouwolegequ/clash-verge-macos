@@ -8,6 +8,7 @@ mod notification;
 mod owner_identity;
 mod runtime_bundle;
 pub mod service;
+mod service_logs;
 pub mod sysopt;
 pub mod timer;
 pub mod tray;
