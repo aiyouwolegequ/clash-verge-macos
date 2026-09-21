@@ -19,7 +19,7 @@
 - 完成 `cargo fmt --check`、`cargo check`、`cargo test -p clash-verge --lib`、`cargo test -p tauri-plugin-mihomo models::tests`、`cargo test -p tauri-plugin-mihomo export_bindings`。
 - 完成 `cargo test -p tauri-plugin-mihomo --lib websocket_tests`，验证 TCP 与 Unix socket 在内核断线后释放订阅并允许重连。
 - 完成 `corepack pnpm typecheck`、`corepack pnpm lint`、`corepack pnpm format:check`、`corepack pnpm prebuild` 与 `corepack pnpm build`。
-- 生成 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.9.5_aarch64.dmg`，并通过 `hdiutil verify`、镜像内应用的 `codesign --verify --deep --strict` 以及三个 Service Helper 的独立签名校验（73,232,890 bytes），SHA256：`d7def91ba1f42d18c4633f94c6614b3c617f01aa01d980a30edb03fff8fe68d0`；已复制至 `/Users/felix/Downloads/Clash_Verge_2.9.5_aarch64.dmg`。
+- GitHub Actions `Release Build` 成功复现 DMG、上传公开资产并完成构建来源证明；最终公开产物已通过 `hdiutil verify`、镜像内应用的 `codesign --verify --deep --strict` 以及三个 Service Helper 的独立签名校验（74,044,760 bytes），SHA256：`6c497b65b663bff3fab3ea19898a3ccd8ae26110fe8396b361fc97c014edcf17`；已同步至 `target/aarch64-apple-darwin/release/bundle/dmg/Clash_Verge_2.9.5_aarch64.dmg` 与 `/Users/felix/Downloads/Clash_Verge_2.9.5_aarch64.dmg`。
 - **架构核验**：镜像内主程序、Stable/Alpha Mihomo 和三个 Service Helper 均为 ARM64。
 - **已知分发限制**：产物使用 ad-hoc 签名；因未配置 Apple Developer ID 与公证凭据，Gatekeeper 不会将其识别为已公证应用。首次运行可能需要在 macOS「隐私与安全性」中手动允许。
 
